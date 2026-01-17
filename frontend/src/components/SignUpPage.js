@@ -17,6 +17,8 @@ import {
 import { Visibility, VisibilityOff, Lock, Person, Restaurant } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 
+const baseURL = process.env.REACT_APP_API_BASE_URL;
+
 export default function SignUpPage() {
     const navigate = useNavigate();
     const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
@@ -73,7 +75,7 @@ export default function SignUpPage() {
 
         setIsLoading(true);
 
-        const response = await fetch("http://localhost:5000/auth/signup", {
+        const response = await fetch(`${baseURL}/auth/signup`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
