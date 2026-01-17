@@ -34,3 +34,7 @@ npm-debug.log*
 tmp/
 temp/
 *.tmp
+
+# HUGE FILE
+RecipeNLG_dataset.csv
+*.csv
