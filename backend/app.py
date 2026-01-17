@@ -622,7 +622,7 @@ def get_random_recipes():
 
 
 @app.route('/api/recipe/create', methods=['POST'])
-def create_recipe():
+def create_recipe_1():
     """Create a new recipe with GNN embedding."""
     data = request.get_json()
     
