@@ -5,6 +5,7 @@ import hashlib
 import numpy as np
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from openapi import *
 
 load_dotenv()
 
@@ -441,6 +442,53 @@ def categorize_recipe(ner_ingredients: list) -> str:
     else:
         return "Appetizers"
 
+@app.route('/api/recipe', methods=['POST'])
+def create_recipe():
+    """Create recipe in supabase"""
+    data = request.get_json()
+    name = data.get('name', '')
+    steps = data.get('steps', '')
+    
+    ingredients = extract_ingredients(steps)
+    directions = extract_directions(steps)
+    graph_representation = extract_graph_representation(steps)
+    tokens = extract_tokens(steps)
+    
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"error": "Database not configured"}), 500
+        
+        result = supabase.table("recipes") \
+            .insert({
+                "name": name,
+                "ingredients": ingredients,
+                "directions": directions,
+                "graph_representation": graph_representation,
+                "tokens": tokens,
+                "embedding": [0,0,0,0,0] # to update with actual embedding
+            }).execute()
+        
+        if not result.data:
+            return jsonify({"error": "Recipe not found"}), 404
+        
+        recipe = result.data
+        return jsonify({
+            "id": recipe["id"],
+            "name": recipe["name"],
+            "ingredients": recipe["ingredients"],
+            "directions": recipe["directions"],
+            "ner": recipe.get("ner", []),
+            "graph": recipe.get("graph_representation", {}),
+            "tokens": recipe.get("tokens", []),
+            "link": recipe.get("link", ""),
+            "source": recipe.get("source", "")
+        })
+        
+    except Exception as e:
+        print(f"Get recipe error: {e}")
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
+
+if __name__ == '__main__':        
     app.run(debug=True, port=5000)
