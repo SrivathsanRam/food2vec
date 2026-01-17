@@ -153,7 +153,7 @@ const LandingPage = () => {
   const handleSubmit = async () => {
     const nameToSubmit = recipeName;
     const stepsToSubmit = recipeSteps;
-    
+
     setRecipeName("");
     setRecipeSteps("");
     handleModalClose();
@@ -204,7 +204,7 @@ const LandingPage = () => {
         <SearchBar onSearch={handleSearch} />
 
         <br />
-        <SliderComponent nNearest={kValue} setKValue={setKValue} />
+        <SliderComponent kValue={kValue} setKValue={setKValue} />
 
         <br />
         <Stack alignItems="center" gap={2}>
