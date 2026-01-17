@@ -1,13 +1,16 @@
-import React from 'react';
-import LandingPage from './components/LandingPage';
-import './App.css';
+import React from "react";
+import "./App.css";
+import AppRoutes from "./routes/AppRoutes";
+import { BrowserRouter } from "react-router-dom";
 
 function App() {
-  return (
-    <div className="App">
-      <LandingPage />
-    </div>
-  );
+    return (
+        <div className="App">
+            <BrowserRouter>
+                <AppRoutes />
+            </BrowserRouter>
+        </div>
+    );
 }
 
 export default App;
