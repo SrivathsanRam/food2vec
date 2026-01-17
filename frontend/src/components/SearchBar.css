@@ -52,6 +52,25 @@
   background: #222;
 }
 
+.search-button.disabled,
+.search-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.search-button.disabled:hover,
+.search-button:disabled:hover {
+  background: #ccc;
+}
+
+.search-hint {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 8px;
+  text-align: center;
+}
+
 .suggestions-list {
   position: absolute;
   top: 100%;

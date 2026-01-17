@@ -253,7 +253,7 @@ const LandingPage = () => {
 
         <br />
         <Stack alignItems="center" gap={2}>
-          <Button onClick={handleModalOpen}>Add recipe</Button>
+          <Button onClick={handleModalOpen}>+ Add recipe</Button>
         </Stack>
 
         <Modal open={isModalOpen} onClose={handleModalClose}>
