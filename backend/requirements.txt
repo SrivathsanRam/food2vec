@@ -1,5 +1,6 @@
 flask==2.3.3
 flask-cors==3.0.10
 python-dotenv==1.0.0
-supabase==2.3.0
+supabase>=2.27.0
 numpy==1.26.4
+websockets>=14,<16

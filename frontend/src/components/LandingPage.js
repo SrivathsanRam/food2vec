@@ -37,7 +37,6 @@ const LandingPage = () => {
     <div className="landing-page">
       <div className="hero-section">
         <div className="logo-container">
-          <span className="logo-icon">🍕</span>
           <h1 className="logo-text">Food2Vec</h1>
         </div>
         <p className="tagline">Discover recipes using AI-powered vector search</p>
@@ -46,15 +45,15 @@ const LandingPage = () => {
         
         <div className="features">
           <div className="feature">
-            <span className="feature-icon">🔍</span>
+       
             <span>Smart Search</span>
           </div>
           <div className="feature">
-            <span className="feature-icon">🤖</span>
+
             <span>AI Powered</span>
           </div>
           <div className="feature">
-            <span className="feature-icon">🔗</span>
+       
             <span>Recipe Flow</span>
           </div>
         </div>

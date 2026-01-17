@@ -63,6 +63,64 @@ def health_check():
     })
 
 
+@app.route('/api/food-names', methods=['GET'])
+def get_all_food_names():
+    """Return all food names with a version hash for cache invalidation."""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"names": [], "version": "", "error": "Database not configured"})
+        
+        # Get all recipe names
+        result = supabase.table("recipes") \
+            .select("name") \
+            .order("name") \
+            .execute()
+        
+        names = [row["name"] for row in result.data]
+        
+        # Generate a version hash based on the names list
+        # This will change when items are added/removed/modified
+        version = hashlib.md5("".join(names).encode()).hexdigest()[:12]
+        
+        return jsonify({
+            "names": names,
+            "version": version,
+            "count": len(names)
+        })
+        
+    except Exception as e:
+        print(f"Get food names error: {e}")
+        return jsonify({"names": [], "version": "", "error": str(e)})
+
+
+@app.route('/api/food-names/version', methods=['GET'])
+def get_food_names_version():
+    """Return just the version hash to check if cache needs refresh."""
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"version": "", "count": 0})
+        
+        # Get count and a sample to generate version
+        result = supabase.table("recipes") \
+            .select("name") \
+            .order("name") \
+            .execute()
+        
+        names = [row["name"] for row in result.data]
+        version = hashlib.md5("".join(names).encode()).hexdigest()[:12]
+        
+        return jsonify({
+            "version": version,
+            "count": len(names)
+        })
+        
+    except Exception as e:
+        print(f"Get version error: {e}")
+        return jsonify({"version": "", "count": 0})
+
+
 @app.route('/api/autocomplete', methods=['GET'])
 def autocomplete():
     """Return recipe title suggestions based on query from Supabase."""

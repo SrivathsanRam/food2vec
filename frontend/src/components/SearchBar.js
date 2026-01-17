@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import foodNamesCache from '../services/foodNamesCache';
 import './SearchBar.css';
 
 const SearchBar = ({ onSearch }) => {
@@ -6,31 +7,57 @@ const SearchBar = ({ onSearch }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [cacheReady, setCacheReady] = useState(false);
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
 
+  // Initialize cache on mount
   useEffect(() => {
-    const fetchSuggestions = async () => {
-      if (query.length < 1) {
-        setSuggestions([]);
-        return;
-      }
+    foodNamesCache.initialize().then(() => {
+      setCacheReady(foodNamesCache.isReady());
+    });
 
-      try {
-        const response = await fetch(
-          `http://localhost:5000/api/autocomplete?q=${encodeURIComponent(query)}`
-        );
-        const data = await response.json();
-        setSuggestions(data.suggestions || []);
-      } catch (error) {
-        console.error('Autocomplete error:', error);
-        setSuggestions([]);
-      }
+    // Subscribe to cache updates
+    const unsubscribe = foodNamesCache.subscribe(() => {
+      setCacheReady(foodNamesCache.isReady());
+    });
+
+    // Cleanup on unmount
+    return () => {
+      unsubscribe();
     };
+  }, []);
 
-    const debounceTimer = setTimeout(fetchSuggestions, 150);
-    return () => clearTimeout(debounceTimer);
-  }, [query]);
+  // Filter suggestions from cache (instant, no network delay)
+  useEffect(() => {
+    if (query.length < 1) {
+      setSuggestions([]);
+      return;
+    }
+
+    // Use cached data for instant filtering
+    if (cacheReady) {
+      const results = foodNamesCache.search(query, 10);
+      setSuggestions(results);
+    } else {
+      // Fallback to API if cache not ready
+      const fetchSuggestions = async () => {
+        try {
+          const response = await fetch(
+            `http://localhost:5000/api/autocomplete?q=${encodeURIComponent(query)}`
+          );
+          const data = await response.json();
+          setSuggestions(data.suggestions || []);
+        } catch (error) {
+          console.error('Autocomplete error:', error);
+          setSuggestions([]);
+        }
+      };
+      
+      const debounceTimer = setTimeout(fetchSuggestions, 150);
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [query, cacheReady]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
