@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import SearchBar from "./SearchBar";
 import SearchResults from "./SearchResults";
 import "./LandingPage.css";
@@ -11,7 +11,6 @@ import IconButton from "@mui/material/IconButton";
 import CloseIcon from "@mui/icons-material/Close";
 import TextField from "@mui/material/TextField";
 import Snackbar from "@mui/material/Snackbar";
-import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 
 // Modern, improved modal style with smooth animations and better UI
@@ -96,7 +95,8 @@ const textInputStyle = {
 };
 
 const LandingPage = () => {
-  const [searchResults, setSearchResults] = useState([]);
+  const [allResults, setAllResults] = useState([]); // Store all 10 results
+  const [searchResults, setSearchResults] = useState([]); // Filtered results based on kValue
   const [kValue, setKValue] = useState(5);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -106,6 +106,13 @@ const LandingPage = () => {
   const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
 
+  // Update displayed results when kValue changes
+  useEffect(() => {
+    if (allResults.length > 0) {
+      setSearchResults(allResults.slice(0, kValue));
+    }
+  }, [kValue, allResults]);
+
   const handleSearch = async (query) => {
     if (!query.trim()) return;
 
@@ -113,18 +120,22 @@ const LandingPage = () => {
     setHasSearched(true);
 
     try {
+      // Always fetch top 10, filter in frontend
       const response = await fetch("http://localhost:5000/api/search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, top_k: kValue }),
+        body: JSON.stringify({ query, top_k: 10 }),
       });
 
       const data = await response.json();
-      setSearchResults(data.results || []);
+      const results = data.results || [];
+      setAllResults(results); // Store all results
+      setSearchResults(results.slice(0, kValue)); // Display filtered results
     } catch (error) {
       console.error("Search error:", error);
+      setAllResults([]);
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -140,32 +151,42 @@ const LandingPage = () => {
   };
 
   const handleSubmit = async () => {
+    const nameToSubmit = recipeName;
+    const stepsToSubmit = recipeSteps;
+    
     setRecipeName("");
     setRecipeSteps("");
-    setIsLoading(true);
     handleModalClose();
     setIsLoading(true);
 
-    const response = await fetch("http://localhost:5000/api/recipe", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: recipeName, steps: recipeSteps }),
-    });
+    try {
+      const response = await fetch("http://localhost:5000/api/recipe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: nameToSubmit, steps: stepsToSubmit }),
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        setIsSnackbarOpen(true);
+        setSnackbarMessage("Failed to create recipe.");
+        return;
+      }
+
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Created recipe successfully.");
+      // Clear search results after creating a recipe
+      setAllResults([]);
+      setSearchResults([]);
+      setHasSearched(false);
+    } catch (error) {
+      console.error("Create recipe error:", error);
       setIsSnackbarOpen(true);
       setSnackbarMessage("Failed to create recipe.");
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    const data = await response.json();
-    setSearchResults(data.results || []);
-    setIsSnackbarOpen(true);
-    setSnackbarMessage("Created recipe successfully.");
-    setSearchResults([]);
   };
 
   const handleSnackbarClose = () => {
@@ -188,7 +209,6 @@ const LandingPage = () => {
         <br />
         <Stack alignItems="center" gap={2}>
           <Button onClick={handleModalOpen}>Add recipe</Button>
-          {isLoading && <CircularProgress size={24} sx={{ mx: 2 }} />}
         </Stack>
 
         <Modal open={isModalOpen} onClose={handleModalClose}>

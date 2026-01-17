@@ -19,10 +19,11 @@ CORS(app)
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+TABLE_NAME = "recipes_duplicate_GNN2"
 
 # Vector dimension for embeddings
 EMBEDDING_DIM = 512
-NODE_FEATURE_DIM = 384  # MiniLM output dimension
+NODE_FEATURE_DIM = 64  # Truncated MiniLM dimension (matches training)
 HIDDEN_DIM = 256
 
 # ============== Global Model Cache (loaded once at startup) ==============
@@ -30,6 +31,7 @@ _gnn_model = None
 _sentence_encoder = None
 _ingredient_cache = {}
 _model_loaded = False
+_node_feature_dim = NODE_FEATURE_DIM  # Will be updated from config
 
 
 # ============== GNN Model Definition ==============
@@ -64,7 +66,7 @@ class RecipeGAT(nn.Module):
 
 def load_models():
     """Load GNN model and sentence encoder at startup."""
-    global _gnn_model, _sentence_encoder, _model_loaded
+    global _gnn_model, _sentence_encoder, _model_loaded, _node_feature_dim
     
     if _model_loaded:
         return True
@@ -85,18 +87,22 @@ def load_models():
             with open(config_path, 'r') as f:
                 config = json.load(f)
             
+            # Update node feature dim from config
+            _node_feature_dim = config.get("input_dim", NODE_FEATURE_DIM)
+            
             # Initialize model with saved config
             _gnn_model = RecipeGAT(
-                input_dim=config.get("input_dim", NODE_FEATURE_DIM),
+                input_dim=_node_feature_dim,
                 hidden_dim=config.get("hidden_dim", HIDDEN_DIM),
                 output_dim=config.get("output_dim", EMBEDDING_DIM)
             )
             _gnn_model.load_state_dict(torch.load(model_path, map_location='cpu'))
             _gnn_model.eval()
-            print(f"✅ Loaded GNN model from {model_path}")
+            print(f"✅ Loaded GNN model from {model_path} (input_dim={_node_feature_dim})")
         else:
             print(f"⚠️ No saved model found at {model_path}, using untrained model")
-            _gnn_model = RecipeGAT(NODE_FEATURE_DIM, HIDDEN_DIM, EMBEDDING_DIM)
+            _node_feature_dim = NODE_FEATURE_DIM
+            _gnn_model = RecipeGAT(_node_feature_dim, HIDDEN_DIM, EMBEDDING_DIM)
             _gnn_model.eval()
         
         _model_loaded = True
@@ -109,15 +115,17 @@ def load_models():
 
 def get_ingredient_embedding(ingredient: str) -> np.ndarray:
     """Get or compute embedding for an ingredient (cached)."""
-    global _ingredient_cache, _sentence_encoder
+    global _ingredient_cache, _sentence_encoder, _node_feature_dim
     
     ingredient_lower = ingredient.lower().strip()
     
     if ingredient_lower not in _ingredient_cache:
         if _sentence_encoder is None:
             load_models()
-        embedding = _sentence_encoder.encode(ingredient_lower, convert_to_numpy=True)
-        _ingredient_cache[ingredient_lower] = embedding.astype(np.float32)
+        # Encode and truncate to match training dimension
+        full_embedding = _sentence_encoder.encode(ingredient_lower, convert_to_numpy=True)
+        truncated = full_embedding[:_node_feature_dim].astype(np.float32)
+        _ingredient_cache[ingredient_lower] = truncated
     
     return _ingredient_cache[ingredient_lower]
 
@@ -125,6 +133,7 @@ def get_ingredient_embedding(ingredient: str) -> np.ndarray:
 def graph_to_pyg_data(graph: dict):
     """Convert recipe graph to PyTorch Geometric Data object."""
     from torch_geometric.data import Data
+    global _node_feature_dim
     
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
@@ -139,10 +148,12 @@ def graph_to_pyg_data(graph: dict):
             label = node.get("label", "unknown")
             feat = get_ingredient_embedding(label)
         else:
-            feat = np.zeros(NODE_FEATURE_DIM, dtype=np.float32)
+            feat = np.zeros(_node_feature_dim, dtype=np.float32)
             if node.get("type") == "intermediate":
                 feat[0] = 1.0
+                feat[1] = 0.5
             elif node.get("type") == "final":
+                feat[0] = 0.5
                 feat[1] = 1.0
         node_features.append(feat)
     
@@ -231,6 +242,12 @@ def generate_embedding(tokens: list[str]) -> list[float]:
 
 def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Calculate cosine similarity between two vectors."""
+    # Handle string embeddings from Supabase
+    if isinstance(vec1, str):
+        vec1 = json.loads(vec1)
+    if isinstance(vec2, str):
+        vec2 = json.loads(vec2)
+    
     if not vec1 or not vec2 or len(vec1) != len(vec2):
         return 0.0
     a = np.array(vec1, dtype=np.float32)
@@ -294,7 +311,7 @@ def get_all_food_names():
             return jsonify({"names": [], "version": "", "error": "Database not configured"})
         
         # Get all recipe names
-        result = supabase.table("recipes") \
+        result = supabase.table(TABLE_NAME) \
             .select("name") \
             .order("name") \
             .execute()
@@ -325,7 +342,7 @@ def get_food_names_version():
             return jsonify({"version": "", "count": 0})
         
         # Get count and a sample to generate version
-        result = supabase.table("recipes") \
+        result = supabase.table(TABLE_NAME) \
             .select("name") \
             .order("name") \
             .execute()
@@ -357,7 +374,7 @@ def autocomplete():
             return jsonify({"suggestions": [], "error": "Database not configured"})
         
         # Search for recipes with titles matching the query (case-insensitive)
-        result = supabase.table("recipes") \
+        result = supabase.table(TABLE_NAME) \
             .select("name") \
             .ilike("name", f"%{query}%") \
             .limit(10) \
@@ -373,7 +390,7 @@ def autocomplete():
 
 @app.route('/api/search', methods=['POST'])
 def search_food():
-    """Search for recipes by title using Supabase with cosine similarity scoring."""
+    """Search for recipes by name, then rank by GNN embedding cosine similarity."""
     data = request.get_json()
     query = data.get('query', '').strip()
     top_k = data.get('top_k', 10)
@@ -386,36 +403,70 @@ def search_food():
         if not supabase:
             return jsonify({"error": "Database not configured"}), 500
         
-        # Generate query embedding for similarity scoring
-        query_tokens = [f"ING_{word.strip().lower().replace(' ', '_')}" for word in query.split()]
-        query_embedding = generate_embedding(query_tokens)
-        
-        # Search for recipes with titles matching the query
-        result = supabase.table("recipes") \
-            .select("id, name, ingredients, directions, ner, graph_representation, embedding") \
+        # First, find the queried recipe to get its embedding
+        query_result = supabase.table(TABLE_NAME) \
+            .select("id, embedding") \
             .ilike("name", f"%{query}%") \
-            .limit(top_k) \
+            .limit(1) \
             .execute()
         
-        # Format results with cosine similarity scores
+        query_embedding = None
+        query_recipe_id = None
+        if query_result.data and query_result.data[0].get("embedding"):
+            query_embedding = query_result.data[0]["embedding"]
+            query_recipe_id = query_result.data[0]["id"]
+        
+        # If no embedding found, fall back to text search only
+        if not query_embedding:
+            result = supabase.table(TABLE_NAME) \
+                .select("id, name, ingredients, directions, ner, graph_representation, embedding") \
+                .ilike("name", f"%{query}%") \
+                .limit(top_k) \
+                .execute()
+            
+            results = []
+            for row in result.data:
+                results.append({
+                    "id": row["id"],
+                    "name": row["name"],
+                    "ingredients": row["ingredients"],
+                    "directions": row["directions"],
+                    "ner": row.get("ner", []),
+                    "graph": row.get("graph_representation", {}),
+                    "score": 0.5,  # Default score when no embedding
+                    "category": categorize_recipe(row.get("ner", []))
+                })
+            
+            return jsonify({
+                "query": query,
+                "results": results,
+                "count": len(results),
+                "message": "Text search (no embedding found for query)"
+            })
+        
+        # Fetch all recipes with embeddings to compute similarity
+        # Get more than top_k to ensure we have enough after filtering
+        all_recipes = supabase.table(TABLE_NAME) \
+            .select("id, name, ingredients, directions, ner, graph_representation, embedding") \
+            .not_.is_("embedding", "null") \
+            .limit(500) \
+            .execute()
+        
+        # Calculate cosine similarity for each recipe
         results = []
-        for row in result.data:
-            # Calculate cosine similarity if embedding exists
+        for row in all_recipes.data:
+            # Skip the query recipe itself
+            if row["id"] == query_recipe_id:
+                continue
+            
             recipe_embedding = row.get("embedding")
             if recipe_embedding:
+                # Compute cosine similarity (already normalized embeddings)
                 score = cosine_similarity(query_embedding, recipe_embedding)
-                # Normalize to 0-1 range (cosine similarity can be -1 to 1)
-                score = (score + 1) / 2
+                # Keep raw cosine similarity (0 to 1 for normalized vectors)
+                # Don't normalize again - our embeddings are already L2 normalized
             else:
-                # Fallback to simple text matching score
-                name_lower = row["name"].lower()
-                query_lower = query.lower()
-                if name_lower.startswith(query_lower):
-                    score = 0.95
-                elif query_lower in name_lower:
-                    score = 0.80
-                else:
-                    score = 0.60
+                score = 0.0
             
             results.append({
                 "id": row["id"],
@@ -428,14 +479,15 @@ def search_food():
                 "category": categorize_recipe(row.get("ner", []))
             })
         
-        # Sort by score
+        # Sort by score and take top_k
         results.sort(key=lambda x: x["score"], reverse=True)
+        results = results[:top_k]
         
         return jsonify({
             "query": query,
             "results": results,
             "count": len(results),
-            "message": "Search completed successfully"
+            "message": "GNN vector similarity search completed"
         })
         
     except Exception as e:
@@ -513,7 +565,7 @@ def search_by_ingredient():
             return jsonify({"error": "Database not configured"}), 500
         
         # Search in the NER field (simplified ingredient names)
-        result = supabase.table("recipes") \
+        result = supabase.table(TABLE_NAME) \
             .select("id, name, ingredients, directions, ner") \
             .contains("ner", [ingredient.lower()]) \
             .limit(limit) \
@@ -521,7 +573,7 @@ def search_by_ingredient():
         
         # If no exact match, try partial match
         if not result.data:
-            result = supabase.table("recipes") \
+            result = supabase.table(TABLE_NAME) \
                 .select("id, name, ingredients, directions, ner") \
                 .ilike("ingredients", f"%{ingredient}%") \
                 .limit(limit) \
@@ -558,7 +610,7 @@ def get_recipe(recipe_id):
         if not supabase:
             return jsonify({"error": "Database not configured"}), 500
         
-        result = supabase.table("recipes") \
+        result = supabase.table(TABLE_NAME) \
             .select("*") \
             .eq("id", recipe_id) \
             .single() \
@@ -596,7 +648,7 @@ def get_random_recipes():
             return jsonify({"error": "Database not configured"}), 500
         
         # Get random recipes (using order by random)
-        result = supabase.table("recipes") \
+        result = supabase.table(TABLE_NAME) \
             .select("id, name, ingredients, ner") \
             .limit(limit) \
             .execute()
@@ -652,7 +704,7 @@ def create_recipe_1():
             "source": data.get('source', 'user_submitted')
         }
         
-        result = supabase.table("recipes_duplicate_GNN2") \
+        result = supabase.table(TABLE_NAME) \
             .insert(recipe_data) \
             .execute()
         
@@ -685,7 +737,7 @@ def search_similar_recipes():
             return jsonify({"error": "Database not configured"}), 500
         
         if recipe_id:
-            result = supabase.table("recipes_duplicate_GNN2") \
+            result = supabase.table(TABLE_NAME) \
                 .select("embedding") \
                 .eq("id", recipe_id) \
                 .single() \
@@ -739,38 +791,55 @@ with app.app_context():
     print("🚀 Starting Flask app...")
     load_models()
 
+
 @app.route('/api/recipe', methods=['POST'])
-def create_recipe():
-    """Create recipe in supabase"""
+def create_recipe_from_steps():
+    """Create recipe from name and steps, extracting all fields via OpenAI."""
     data = request.get_json()
-    name = data.get('name', '')
-    steps = data.get('steps', '')
+    name = data.get('name', '').strip()
+    steps = data.get('steps', '').strip()
     
-    ingredients = extract_ingredients(steps)
-    directions = extract_directions(steps)
-    graph_representation = extract_graph_representation(steps)
-    tokens = extract_tokens(steps)
+    if not name or not steps:
+        return jsonify({"error": "Both 'name' and 'steps' are required"}), 400
     
     try:
+        # Extract structured data using OpenAI functions
+        ingredients = extract_ingredients(steps)
+        directions = extract_directions(steps)
+        graph_representation = extract_graph_representation(steps)
+        tokens = extract_tokens(steps)
+        
+        # Extract NER (simplified ingredient names) from ingredients
+        ner = [ing.lower().split()[-1] for ing in ingredients] if ingredients else []
+        
+        # Generate GNN embedding from the graph
+        embedding = generate_gnn_embedding(graph_representation)
+        
         supabase = get_supabase_client()
         if not supabase:
             return jsonify({"error": "Database not configured"}), 500
         
-        result = supabase.table("recipes") \
-            .insert({
-                "name": name,
-                "ingredients": ingredients,
-                "directions": directions,
-                "graph_representation": graph_representation,
-                "tokens": tokens,
-                "embedding": [0,0,0,0,0] # to update with actual embedding
-            }).execute()
+        recipe_data = {
+            "name": name,
+            "ingredients": ingredients,
+            "directions": directions,
+            "ner": ner,
+            "graph_representation": graph_representation,
+            "tokens": tokens,
+            "embedding": embedding,
+            "source": "user_submitted"
+        }
+        
+        result = supabase.table(TABLE_NAME) \
+            .insert(recipe_data) \
+            .execute()
         
         if not result.data:
-            return jsonify({"error": "Recipe not found"}), 404
+            return jsonify({"error": "Failed to create recipe"}), 500
         
-        recipe = result.data
+        recipe = result.data[0]
         return jsonify({
+            "message": "Recipe created successfully",
             "id": recipe["id"],
             "name": recipe["name"],
             "ingredients": recipe["ingredients"],
@@ -778,12 +847,11 @@ def create_recipe():
             "ner": recipe.get("ner", []),
             "graph": recipe.get("graph_representation", {}),
             "tokens": recipe.get("tokens", []),
-            "link": recipe.get("link", ""),
-            "source": recipe.get("source", "")
-        })
+            "embedding_generated": True
+        }), 201
         
     except Exception as e:
-        print(f"Get recipe error: {e}")
+        print(f"Create recipe error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
