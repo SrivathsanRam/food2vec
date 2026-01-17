@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { Visibility, VisibilityOff, Lock, Person, Restaurant } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
+import Cookies from "js-cookie";
 
 export default function SignUpPage() {
     const navigate = useNavigate();
@@ -73,27 +74,43 @@ export default function SignUpPage() {
 
         setIsLoading(true);
 
-        const response = await fetch("http://localhost:5000/auth/signup", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ username: formData.name, password: formData.password }),
-        });
+        try {
+            const response = await fetch("http://localhost:5000/auth/signup", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ username: formData.name, password: formData.password }),
+            });
 
-        if (!response.ok) {
+            if (!response.ok) {
+                setIsSnackbarOpen(true);
+                setSnackbarMessage("Error signing up user");
+            } else {
+                // Store user info in cookies
+                Cookies.set("username", formData.name, { expires: 1 });
+                Cookies.set("isLoggedIn", "true", { expires: 1 });
+                
+                setSnackbarMessage("Account created!");
+                setIsSnackbarOpen(true);
+                
+                // New users always go to onboarding
+                setTimeout(() => {
+                    navigate("/onboarding");
+                }, 500);
+            }
+        } catch (error) {
+            console.error("Signup error:", error);
             setIsSnackbarOpen(true);
-            setSnackbarMessage("Error signing up user");
-        } else {
-            navigate("/recipes");
+            setSnackbarMessage("Network error. Please try again.");
+        } finally {
+            setIsLoading(false);
+            setFormData({
+                name: "",
+                password: "",
+                confirmPassword: "",
+            });
         }
-
-        setIsLoading(false);
-        setFormData({
-            name: "",
-            password: "",
-            confirmPassword: "",
-        });
     };
 
     const handleSnackbarClose = () => {

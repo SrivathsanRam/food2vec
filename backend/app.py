@@ -11,14 +11,13 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from openapi import *
 import bcrypt
+import base64
+import zlib
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
-
-# bcrypt config
-SALT = os.getenv("SALT").encode('utf-8')
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -1095,6 +1094,249 @@ def logout():
     except Exception as e:
         print(f"Logout error: {e}")
         return jsonify({"error": f"Logout failed: {str(e)}"}), 500
+
+
+# ============== Palate Profile Functions ==============
+
+def encode_palate(ratings: dict, categories: dict) -> str:
+    """
+    Encode palate ratings into a shareable string.
+    
+    Format: base64(compressed(json))
+    """
+    try:
+        # Build palate data
+        palate_data = {
+            "r": ratings,  # ratings: {dish_id: rating}
+            "c": categories,  # category preferences computed from ratings
+            "v": 1  # version for future compatibility
+        }
+        
+        # Convert to JSON, compress, and encode
+        json_str = json.dumps(palate_data, separators=(',', ':'))
+        compressed = zlib.compress(json_str.encode('utf-8'))
+        encoded = base64.urlsafe_b64encode(compressed).decode('utf-8')
+        
+        # Remove padding for cleaner code
+        encoded = encoded.rstrip('=')
+        
+        return encoded
+    except Exception as e:
+        print(f"Error encoding palate: {e}")
+        return ""
+
+
+def decode_palate(palate_code: str) -> dict:
+    """
+    Decode a palate code back into ratings and preferences.
+    """
+    try:
+        # Add back padding if needed
+        padding = 4 - (len(palate_code) % 4)
+        if padding != 4:
+            palate_code += '=' * padding
+        
+        # Decode and decompress
+        compressed = base64.urlsafe_b64decode(palate_code.encode('utf-8'))
+        json_str = zlib.decompress(compressed).decode('utf-8')
+        palate_data = json.loads(json_str)
+        
+        return palate_data
+    except Exception as e:
+        print(f"Error decoding palate: {e}")
+        return None
+
+
+def compute_category_preferences(ratings: dict, dishes: list) -> dict:
+    """
+    Compute category preferences from individual dish ratings.
+    """
+    category_scores = {}
+    category_counts = {}
+    
+    # Create dish lookup
+    dish_lookup = {str(d["id"]): d for d in dishes}
+    
+    for dish_id, rating in ratings.items():
+        dish = dish_lookup.get(str(dish_id))
+        if dish:
+            category = dish.get("category", "Other")
+            if category not in category_scores:
+                category_scores[category] = 0
+                category_counts[category] = 0
+            category_scores[category] += rating
+            category_counts[category] += 1
+    
+    # Calculate averages
+    preferences = {}
+    for category, total_score in category_scores.items():
+        count = category_counts[category]
+        preferences[category] = round(total_score / count, 2) if count > 0 else 0
+    
+    return preferences
+
+
+@app.route('/api/palate/create', methods=['POST'])
+def create_palate():
+    """Create a palate profile from dish ratings."""
+    data = request.get_json()
+    
+    username = data.get('username', '').strip()
+    ratings = data.get('ratings', {})
+    dishes = data.get('dishes', [])
+    
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    
+    if not ratings or len(ratings) < 5:
+        return jsonify({"error": "At least 5 dish ratings are required"}), 400
+    
+    try:
+        # Compute category preferences
+        category_prefs = compute_category_preferences(ratings, dishes)
+        
+        # Generate palate code
+        palate_code = encode_palate(ratings, category_prefs)
+        
+        if not palate_code:
+            return jsonify({"error": "Failed to generate palate code"}), 500
+        
+        # Store in database
+        supabase = get_supabase_client()
+        if supabase:
+            # Update or insert user palate
+            result = supabase.table("users") \
+                .update({
+                    "palate_code": palate_code,
+                    "palate_ratings": ratings,
+                    "palate_categories": category_prefs,
+                    "is_onboarded": True
+                }) \
+                .eq("username", username) \
+                .execute()
+            
+            if not result.data:
+                print(f"Warning: Could not update user palate for {username}")
+        
+        return jsonify({
+            "message": "Palate profile created successfully",
+            "palate_code": palate_code,
+            "category_preferences": category_prefs
+        })
+        
+    except Exception as e:
+        print(f"Create palate error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/palate/import', methods=['POST'])
+def import_palate():
+    """Import a palate profile from a code."""
+    data = request.get_json()
+    
+    username = data.get('username', '').strip()
+    palate_code = data.get('palate_code', '').strip()
+    
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    
+    if not palate_code:
+        return jsonify({"error": "Palate code is required"}), 400
+    
+    try:
+        # Decode the palate
+        palate_data = decode_palate(palate_code)
+        
+        if not palate_data:
+            return jsonify({"error": "Invalid palate code"}), 400
+        
+        ratings = palate_data.get("r", {})
+        categories = palate_data.get("c", {})
+        
+        # Store in database
+        supabase = get_supabase_client()
+        if supabase:
+            result = supabase.table("users") \
+                .update({
+                    "palate_code": palate_code,
+                    "palate_ratings": ratings,
+                    "palate_categories": categories,
+                    "is_onboarded": True
+                }) \
+                .eq("username", username) \
+                .execute()
+            
+            if not result.data:
+                return jsonify({"error": "User not found"}), 404
+        
+        return jsonify({
+            "message": "Palate imported successfully",
+            "palate_code": palate_code,
+            "category_preferences": categories
+        })
+        
+    except Exception as e:
+        print(f"Import palate error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/palate/check', methods=['GET'])
+def check_palate():
+    """Check if a user has been onboarded."""
+    username = request.args.get('username', '').strip()
+    
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"is_onboarded": False})
+        
+        result = supabase.table("users") \
+            .select("is_onboarded, palate_code, palate_categories") \
+            .eq("username", username) \
+            .single() \
+            .execute()
+        
+        if not result.data:
+            return jsonify({"is_onboarded": False})
+        
+        return jsonify({
+            "is_onboarded": result.data.get("is_onboarded", False),
+            "palate_code": result.data.get("palate_code", ""),
+            "category_preferences": result.data.get("palate_categories", {})
+        })
+        
+    except Exception as e:
+        print(f"Check palate error: {e}")
+        return jsonify({"is_onboarded": False})
+
+
+@app.route('/api/palate/decode', methods=['POST'])
+def decode_palate_endpoint():
+    """Decode a palate code to see preferences (public)."""
+    data = request.get_json()
+    palate_code = data.get('palate_code', '').strip()
+    
+    if not palate_code:
+        return jsonify({"error": "Palate code is required"}), 400
+    
+    try:
+        palate_data = decode_palate(palate_code)
+        
+        if not palate_data:
+            return jsonify({"error": "Invalid palate code"}), 400
+        
+        return jsonify({
+            "ratings": palate_data.get("r", {}),
+            "category_preferences": palate_data.get("c", {}),
+            "version": palate_data.get("v", 1)
+        })
+        
+    except Exception as e:
+        print(f"Decode palate error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':        
