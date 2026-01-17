@@ -21,21 +21,16 @@ import Cookies from "js-cookie";
 
 // Dishes from the recipe database for rating
 const ONBOARDING_DISHES = [
-    { id: 1, name: "Spaghetti Carbonara", category: "Pasta" },
-    { id: 2, name: "Fruit Scones", category: "Baked" },
-    { id: 3, name: "Fried Rice", category: "Asian" },
-    { id: 4, name: "Potato Chip Cookies", category: "Cookies" },
-    { id: 5, name: "Sweet And Sour Carrots", category: "Vegetables" },
-    { id: 6, name: "Pineapple Cheese Ball", category: "Appetizer" },
-    { id: 7, name: "Mississippi Mud Cake", category: "Dessert" },
-    { id: 8, name: "Harvard Beets", category: "Vegetables" },
-    { id: 9, name: "Cranberry Salad", category: "Salad" },
-    { id: 10, name: "BBQ Ribs", category: "Meat" },
-    { id: 11, name: "Almond Bars", category: "Cookies" },
-    { id: 12, name: "Roasted Pumpkin Seeds", category: "Snack" },
-    { id: 13, name: "Chex Party Mix", category: "Snack" },
-    { id: 14, name: "Cranberry Pie", category: "Dessert" },
-    { id: 15, name: "Ladyfingers", category: "Cookies" },
+    { id: 1, name: "\"Refried\" Beans", category: "Beans" },
+    { id: 2, name: "3 Bean Salad", category: "Salad" },
+    { id: 3, name: "20 minute seared strip steak with sweet-and-sour carrots", category: "Meat" },
+    { id: 4, name: "Almond Shortbread", category: "Cookies" },
+    { id: 5, name: "Almond Crescent", category: "Cookies" },
+    { id: 6, name: "5-Minute Fudge", category: "Dessert" },
+    { id: 7, name: "1950'S Potato Chip Cookies", category: "Cookies" },
+    { id: 8, name: "(Web Exclusive) Round 2 Recipe: Edamame with Pasta", category: "Pasta" },
+    { id: 9, name: "*Sweet And Sour Carrots", category: "Vegetables" },
+    { id: 10, name: "\"Pecan Pie\" Acorn Squash", category: "Vegetables" },
 ];
 
 export default function OnboardingPage() {

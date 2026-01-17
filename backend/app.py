@@ -1098,7 +1098,114 @@ def logout():
 
 # ============== Palate Profile Functions ==============
 
-def encode_palate(ratings: dict, categories: dict) -> str:
+# Dish names used in onboarding - for embedding lookup
+ONBOARDING_DISH_NAMES = [
+    '"Refried" Beans', "3 Bean Salad", "20 minute seared strip steak with sweet-and-sour carrots",
+    "Almond Shortbread", "Almond Crescent", "5-Minute Fudge", "1950'S Potato Chip Cookies",
+    "(Web Exclusive) Round 2 Recipe: Edamame with Pasta", "*Sweet And Sour Carrots",
+    '"Pecan Pie" Acorn Squash'
+]
+
+
+def get_dish_embeddings_from_db(dish_names: list) -> dict:
+    """Fetch embeddings for dishes from the database."""
+    supabase = get_supabase_client()
+    if not supabase:
+        return {}
+    
+    embeddings = {}
+    for name in dish_names:
+        try:
+            # Try exact match first
+            result = supabase.table(TABLE_NAME) \
+                .select("name, embedding") \
+                .eq("name", name) \
+                .limit(1) \
+                .execute()
+            
+            if result.data and result.data[0].get("embedding"):
+                emb = result.data[0]["embedding"]
+                if isinstance(emb, str):
+                    emb = json.loads(emb)
+                embeddings[name] = emb
+        except Exception as e:
+            print(f"Error fetching embedding for {name}: {e}")
+    
+    return embeddings
+
+
+def compute_palate_embedding(ratings: dict, dishes: list) -> list:
+    """
+    Compute a palate embedding as a weighted average of dish embeddings.
+    Dishes rated higher have more influence on the palate.
+    """
+    # Create dish ID to name mapping
+    dish_id_to_name = {str(d["id"]): d["name"] for d in dishes}
+    
+    # Get dish names that were rated
+    rated_dish_names = [dish_id_to_name[str(did)] for did in ratings.keys() if str(did) in dish_id_to_name]
+    
+    # Fetch embeddings from database
+    dish_embeddings = get_dish_embeddings_from_db(rated_dish_names)
+    
+    if not dish_embeddings:
+        # Fallback: generate embeddings from dish names using sentence encoder
+        if _sentence_encoder:
+            weighted_sum = np.zeros(EMBEDDING_DIM, dtype=np.float32)
+            total_weight = 0
+            for dish_id, rating in ratings.items():
+                dish = dish_id_to_name.get(str(dish_id))
+                if dish:
+                    # Weight: higher ratings = more influence (rating 1-5 maps to 0.2-1.0)
+                    weight = rating / 5.0
+                    # Generate embedding from name
+                    emb = _sentence_encoder.encode(dish, convert_to_numpy=True)
+                    # Pad or truncate to EMBEDDING_DIM
+                    if len(emb) < EMBEDDING_DIM:
+                        emb = np.pad(emb, (0, EMBEDDING_DIM - len(emb)))
+                    else:
+                        emb = emb[:EMBEDDING_DIM]
+                    weighted_sum += weight * emb
+                    total_weight += weight
+            
+            if total_weight > 0:
+                palate_emb = weighted_sum / total_weight
+                # Normalize
+                norm = np.linalg.norm(palate_emb)
+                if norm > 0:
+                    palate_emb = palate_emb / norm
+                return palate_emb.tolist()
+        return []
+    
+    # Compute weighted average of embeddings
+    weighted_sum = None
+    total_weight = 0
+    
+    for dish_id, rating in ratings.items():
+        dish_name = dish_id_to_name.get(str(dish_id))
+        if dish_name and dish_name in dish_embeddings:
+            emb = np.array(dish_embeddings[dish_name], dtype=np.float32)
+            # Weight: higher ratings = more influence
+            weight = rating / 5.0
+            
+            if weighted_sum is None:
+                weighted_sum = np.zeros_like(emb)
+            
+            weighted_sum += weight * emb
+            total_weight += weight
+    
+    if weighted_sum is not None and total_weight > 0:
+        palate_emb = weighted_sum / total_weight
+        # Normalize
+        norm = np.linalg.norm(palate_emb)
+        if norm > 0:
+            palate_emb = palate_emb / norm
+        return palate_emb.tolist()
+    
+    return []
+
+
+def encode_palate(ratings: dict, categories: dict, embedding: list = None) -> str:
     """
     Encode palate ratings into a shareable string.
     
@@ -1111,6 +1218,11 @@ def encode_palate(ratings: dict, categories: dict) -> str:
             "c": categories,  # category preferences computed from ratings
             "v": 1  # version for future compatibility
         }
+        
+        # Add embedding if provided (truncate for size)
+        if embedding:
+            # Store first 64 dims to keep code size reasonable
+            palate_data["e"] = [round(x, 4) for x in embedding[:64]]
         
         # Convert to JSON, compress, and encode
         json_str = json.dumps(palate_data, separators=(',', ':'))
@@ -1195,8 +1307,11 @@ def create_palate():
         # Compute category preferences
         category_prefs = compute_category_preferences(ratings, dishes)
         
-        # Generate palate code
-        palate_code = encode_palate(ratings, category_prefs)
+        # Compute palate embedding from dish embeddings
+        palate_embedding = compute_palate_embedding(ratings, dishes)
+        
+        # Generate palate code with embedding
+        palate_code = encode_palate(ratings, category_prefs, palate_embedding)
         
         if not palate_code:
             return jsonify({"error": "Failed to generate palate code"}), 500
@@ -1336,6 +1451,166 @@ def decode_palate_endpoint():
         
     except Exception as e:
         print(f"Decode palate error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/palate/compare', methods=['POST'])
+def compare_palates():
+    """Compare two palate codes and return similarity analysis."""
+    data = request.get_json()
+    # Accept both naming conventions
+    code1 = (data.get('code1') or data.get('palate_code_1') or '').strip()
+    code2 = (data.get('code2') or data.get('palate_code_2') or '').strip()
+    
+    if not code1 or not code2:
+        return jsonify({"error": "Both palate codes are required"}), 400
+    
+    try:
+        palate1 = decode_palate(code1)
+        palate2 = decode_palate(code2)
+        
+        if not palate1 or not palate2:
+            return jsonify({"error": "Invalid palate code(s)"}), 400
+        
+        ratings1 = palate1.get("r", {})
+        ratings2 = palate2.get("r", {})
+        cats1 = palate1.get("c", {})
+        cats2 = palate2.get("c", {})
+        emb1 = palate1.get("e", [])
+        emb2 = palate2.get("e", [])
+        
+        # Calculate embedding similarity (primary metric)
+        embedding_similarity = 0.0
+        if emb1 and emb2:
+            embedding_similarity = cosine_similarity(emb1, emb2)
+            embedding_similarity = max(0, min(1, embedding_similarity))  # Clamp to [0,1]
+        
+        # Calculate rating similarity (dishes rated by both)
+        common_dishes = set(ratings1.keys()) & set(ratings2.keys())
+        if common_dishes:
+            rating_diff = sum(abs(float(ratings1[d]) - float(ratings2[d])) for d in common_dishes)
+            max_diff = len(common_dishes) * 4  # Max difference is 4 per dish (1-5 scale)
+            rating_similarity = 1 - (rating_diff / max_diff) if max_diff > 0 else 0
+        else:
+            rating_similarity = 0.5  # Default if no common dishes
+        
+        # Calculate category preference similarity
+        all_cats = set(cats1.keys()) | set(cats2.keys())
+        if all_cats:
+            cat_diff = sum(abs(float(cats1.get(c, 2.5)) - float(cats2.get(c, 2.5))) for c in all_cats)
+            max_cat_diff = len(all_cats) * 4  # Max difference per category (1-5 scale)
+            cat_similarity = 1 - (cat_diff / max_cat_diff) if max_cat_diff > 0 else 0
+        else:
+            cat_similarity = 0.5
+        
+        # Overall similarity - prioritize embedding if available
+        if emb1 and emb2:
+            overall_similarity = (embedding_similarity * 0.5 + rating_similarity * 0.3 + cat_similarity * 0.2)
+        else:
+            overall_similarity = (rating_similarity * 0.6 + cat_similarity * 0.4)
+        
+        # Ensure valid number
+        overall_similarity = max(0, min(1, overall_similarity))
+        
+        # Find common liked categories (both have preference > 2.5)
+        common_liked = [c for c in all_cats if float(cats1.get(c, 0)) > 2.5 and float(cats2.get(c, 0)) > 2.5]
+        
+        # Find different preferences (one likes, other doesn't)
+        different_prefs = [c for c in all_cats 
+                          if (float(cats1.get(c, 0)) > 3 and float(cats2.get(c, 0)) < 2.5) or 
+                             (float(cats2.get(c, 0)) > 3 and float(cats1.get(c, 0)) < 2.5)]
+        
+        return jsonify({
+            "similarity": round(overall_similarity, 3),
+            "overall_similarity": round(overall_similarity * 100, 1),
+            "rating_similarity": round(rating_similarity * 100, 1),
+            "category_similarity": round(cat_similarity * 100, 1),
+            "embedding_similarity": round(embedding_similarity * 100, 1) if emb1 and emb2 else None,
+            "common_dishes_rated": len(common_dishes),
+            "common_categories": common_liked,
+            "common_liked_categories": common_liked,
+            "different_categories": different_prefs,
+            "different_preferences": different_prefs
+        })
+        
+    except Exception as e:
+        print(f"Compare palates error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/palate/intersection', methods=['POST'])
+def find_palate_intersection():
+    """Find recipes that both users would likely enjoy based on their palates."""
+    data = request.get_json()
+    # Accept both naming conventions
+    code1 = (data.get('code1') or data.get('palate_code_1') or '').strip()
+    code2 = (data.get('code2') or data.get('palate_code_2') or '').strip()
+    limit = data.get('limit', 10)
+    
+    if not code1 or not code2:
+        return jsonify({"error": "Both palate codes are required"}), 400
+    
+    try:
+        palate1 = decode_palate(code1)
+        palate2 = decode_palate(code2)
+        
+        if not palate1 or not palate2:
+            return jsonify({"error": "Invalid palate code(s)"}), 400
+        
+        cats1 = palate1.get("c", {})
+        cats2 = palate2.get("c", {})
+        
+        # Find categories both users like (preference > 2.5)
+        common_liked = [c for c in set(cats1.keys()) & set(cats2.keys()) 
+                        if cats1.get(c, 0) > 2.5 and cats2.get(c, 0) > 2.5]
+        
+        if not common_liked:
+            return jsonify({
+                "recipes": [],
+                "message": "No common preferred categories found"
+            })
+        
+        # Query recipes that match common liked categories
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        
+        # Build query for common categories
+        recipes = []
+        for category in common_liked[:3]:  # Limit to top 3 categories
+            response = supabase.table(TABLE_NAME)\
+                .select("name, ingredients, ner")\
+                .ilike("ner", f"%{category}%")\
+                .limit(limit // len(common_liked[:3]) + 1)\
+                .execute()
+            
+            if response.data:
+                for r in response.data:
+                    if r not in recipes:
+                        recipes.append({
+                            "name": r.get("name", "Unknown"),
+                            "ingredients": r.get("ingredients", ""),
+                            "matched_category": category
+                        })
+        
+        # Remove duplicates and limit
+        seen = set()
+        unique_recipes = []
+        for r in recipes:
+            if r["name"] not in seen:
+                seen.add(r["name"])
+                unique_recipes.append(r)
+                if len(unique_recipes) >= limit:
+                    break
+        
+        return jsonify({
+            "recipes": unique_recipes,
+            "common_categories": common_liked,
+            "total_found": len(unique_recipes)
+        })
+        
+    except Exception as e:
+        print(f"Intersection error: {e}")
         return jsonify({"error": str(e)}), 500
 
 

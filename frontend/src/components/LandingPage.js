@@ -15,6 +15,16 @@ import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Divider from "@mui/material/Divider";
+import Avatar from "@mui/material/Avatar";
+import PersonIcon from "@mui/icons-material/Person";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import LogoutIcon from "@mui/icons-material/Logout";
+import CompareIcon from "@mui/icons-material/Compare";
+import { useNavigate } from "react-router-dom";
+import Cookies from "js-cookie";
 
 // Modern, improved modal style with smooth animations and better UI
 const style = {
@@ -98,6 +108,7 @@ const textInputStyle = {
 };
 
 const LandingPage = () => {
+  const navigate = useNavigate();
   const [allResults, setAllResults] = useState([]); // Store all 10 results
   const [searchResults, setSearchResults] = useState([]); // Filtered results based on kValue
   const [kValue, setKValue] = useState(5);
@@ -111,6 +122,13 @@ const LandingPage = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createStatus, setCreateStatus] = useState(null); // null, 'success', 'error'
+  
+  // Profile menu state
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [palateCode, setPalateCode] = useState("");
+  const [codeCopied, setCodeCopied] = useState(false);
+  const username = Cookies.get("username") || "User";
+  const profileMenuOpen = Boolean(anchorEl);
 
   // Update displayed results when kValue changes
   useEffect(() => {
@@ -118,6 +136,52 @@ const LandingPage = () => {
       setSearchResults(allResults.slice(0, kValue));
     }
   }, [kValue, allResults]);
+
+  // Fetch palate code on mount
+  useEffect(() => {
+    const fetchPalate = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/palate/check?username=${encodeURIComponent(username)}`
+        );
+        const data = await response.json();
+        if (data.palate_code) {
+          setPalateCode(data.palate_code);
+        }
+      } catch (error) {
+        console.error("Error fetching palate:", error);
+      }
+    };
+    if (username) fetchPalate();
+  }, [username]);
+
+  const handleProfileClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleProfileClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleCopyPalateCode = () => {
+    navigator.clipboard.writeText(palateCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+    setSnackbarMessage("Palate code copied!");
+    setIsSnackbarOpen(true);
+  };
+
+  const handleLogout = () => {
+    Cookies.remove("username");
+    Cookies.remove("isLoggedIn");
+    Cookies.remove("isOnboarded");
+    handleProfileClose();
+    navigate("/login");
+  };
+
+  const handleCompareClick = () => {
+    navigate("/compare");
+  };
 
   const handleSearch = async (query) => {
     if (!query.trim()) return;
@@ -240,7 +304,85 @@ const LandingPage = () => {
 
   return (
     <div className="landing-page">
-      <div className="hero-section">
+      {/* Top Navigation Bar */}
+      <Box
+        sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          px: 2,
+          py: 1,
+          backgroundColor: "rgba(255, 255, 255, 0.95)",
+          backdropFilter: "blur(8px)",
+          borderBottom: "1px solid #eee",
+          zIndex: 1000,
+        }}
+      >
+        {/* Profile Button - Left */}
+        <IconButton
+          onClick={handleProfileClick}
+          size="small"
+          sx={{ border: "1px solid #e0e0e0" }}
+        >
+          <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
+            <PersonIcon fontSize="small" />
+          </Avatar>
+        </IconButton>
+
+        <Menu
+          anchorEl={anchorEl}
+          open={profileMenuOpen}
+          onClose={handleProfileClose}
+          PaperProps={{
+            sx: { minWidth: 240, mt: 1 },
+          }}
+        >
+          <Box sx={{ px: 2, py: 1 }}>
+            <Typography variant="subtitle2">{username}</Typography>
+            <Typography variant="caption" color="text.secondary">Your palate code</Typography>
+            <Box
+              sx={{
+                mt: 1,
+                p: 1,
+                backgroundColor: "#f5f5f5",
+                borderRadius: 1,
+                fontFamily: "monospace",
+                fontSize: "0.75rem",
+                wordBreak: "break-all",
+                maxWidth: 200,
+              }}
+            >
+              {palateCode ? palateCode.substring(0, 30) + "..." : "Loading..."}
+            </Box>
+          </Box>
+          <MenuItem onClick={handleCopyPalateCode} disabled={!palateCode}>
+            <ContentCopyIcon fontSize="small" sx={{ mr: 1 }} />
+            {codeCopied ? "Copied!" : "Copy Palate Code"}
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={handleLogout}>
+            <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
+            Log Out
+          </MenuItem>
+        </Menu>
+
+        {/* Compare Button - Right */}
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<CompareIcon />}
+          onClick={handleCompareClick}
+          sx={{ textTransform: "none" }}
+        >
+          Compare
+        </Button>
+      </Box>
+
+      <div className="hero-section" style={{ paddingTop: "60px" }}>
         <div className="logo-container">
           <h1 className="logo-text">Food2Vec</h1>
         </div>
