@@ -43,13 +43,6 @@ const LandingPage = () => {
         
         <SearchBar onSearch={handleSearch} />
         
-        <div className="features">
-          <span className="feature">Smart Search</span>
-          <span className="feature">•</span>
-          <span className="feature">AI Powered</span>
-          <span className="feature">•</span>
-          <span className="feature">Recipe Flow</span>
-        </div>
       </div>
 
       {hasSearched && (
@@ -57,7 +50,7 @@ const LandingPage = () => {
       )}
 
       <footer className="footer">
-        <p>Powered by Supabase + pgvector + React Flow</p>
+        <p></p>
       </footer>
     </div>
   );
