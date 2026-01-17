@@ -76,7 +76,7 @@ class FoodNamesCache {
   async checkAndRefresh() {
     try {
       const response = await fetch(`${API_BASE}/food-names/version`);
-      const { version, count } = await response.json();
+      const { version } = await response.json();
 
       // If version differs or we have no data, refresh the full list
       if (version !== this.version || this.names.length === 0) {
@@ -130,7 +130,6 @@ class FoodNamesCache {
     if (!query || query.length < 1) return [];
     
     const lowerQuery = query.toLowerCase();
-    const results = [];
     
     // Prioritize names that start with the query
     const startsWithMatches = [];

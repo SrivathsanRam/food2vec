@@ -26,6 +26,20 @@ LIMIT_ROWS = 2231142
 # Minimum number of ingredients required
 MIN_INGREDIENTS = 6
 
+# Minimum number of steps/directions required
+MIN_STEPS = 4
+
+# Maximum recipes to output
+MAX_RECIPES = 10000
+
+# Minimum match ratio (percentage of ingredients that must be in allowed list)
+MIN_MATCH_RATIO = 1  # 100% of ingredients must match
+
+# Category requirements - recipe must have ingredients from at least N of these categories
+REQUIRED_CATEGORY_COUNT = 3  # Must have ingredients from at least 3 different flavor categories
+
+# Flavor categories (exclude actions and textures for balancing)
+FLAVOR_CATEGORIES = ['sweet', 'sour', 'umami', 'bitter', 'salty', 'spicy']
 
 # ============================================================================
 # STRICT VALIDATION FILTER - Ingredient Categories
@@ -361,61 +375,136 @@ def build_allowed_ingredients() -> set:
     return allowed
 
 
-def validate_recipe(ner_list: list, allowed_ingredients: set) -> bool:
+def build_category_lookup() -> dict[str, set]:
+    """Build a lookup from ingredient to its categories."""
+    ingredient_to_categories = {}
+    for category, items in FILTER_DICT.items():
+        for item in items:
+            item_lower = item.lower()
+            if item_lower not in ingredient_to_categories:
+                ingredient_to_categories[item_lower] = set()
+            ingredient_to_categories[item_lower].add(category)
+    return ingredient_to_categories
+
+
+def get_recipe_categories(ner_list: list, category_lookup: dict) -> set:
+    """Get all categories represented in a recipe."""
+    categories = set()
+    for ingredient in ner_list:
+        ing_lower = ingredient.lower()
+        if ing_lower in category_lookup:
+            categories.update(category_lookup[ing_lower])
+    return categories
+
+
+def validate_recipe(ner_list: list, directions: list, allowed_ingredients: set, category_lookup: dict) -> tuple[bool, float]:
     """
     Validate a recipe based on:
     1. Has at least MIN_INGREDIENTS ingredients
-    2. All ingredients are in the allowed list
+    2. Has at least MIN_STEPS directions
+    3. At least MIN_MATCH_RATIO of ingredients are in the allowed list
+    4. Has ingredients from at least REQUIRED_CATEGORY_COUNT flavor categories
+    
+    Returns:
+        (is_valid, match_ratio)
     """
     if len(ner_list) < MIN_INGREDIENTS:
-        return False
+        return False, 0.0
     
-    for ingredient in ner_list:
-        if ingredient.lower() not in allowed_ingredients:
-            return False
+    if len(directions) < MIN_STEPS:
+        return False, 0.0
     
-    return True
+    # Calculate match ratio
+    matched = sum(1 for ing in ner_list if ing.lower() in allowed_ingredients)
+    match_ratio = matched / len(ner_list)
+    
+    if match_ratio < MIN_MATCH_RATIO:
+        return False, match_ratio
+    
+    # Check flavor category diversity
+    recipe_categories = get_recipe_categories(ner_list, category_lookup)
+    flavor_categories_present = recipe_categories.intersection(set(FLAVOR_CATEGORIES))
+    
+    if len(flavor_categories_present) < REQUIRED_CATEGORY_COUNT:
+        return False, match_ratio
+    
+    return True, match_ratio
 
 
 def filter_recipes(input_path: Path, output_path: Path, limit_rows: int = None) -> int:
     """
-    Filter recipes from the raw Kaggle CSV based on strict ingredient validation.
+    Filter recipes from the raw Kaggle CSV based on ingredient validation.
+    Limits output to MAX_RECIPES with balanced category distribution.
     
     Returns:
         Number of valid recipes found
     """
     print(f"\n🔍 Filtering recipes from: {input_path.name}")
     print(f"   Minimum ingredients: {MIN_INGREDIENTS}")
+    print(f"   Minimum steps: {MIN_STEPS}")
+    print(f"   Minimum match ratio: {MIN_MATCH_RATIO * 100}%")
+    print(f"   Required flavor categories: {REQUIRED_CATEGORY_COUNT}")
+    print(f"   Max recipes: {MAX_RECIPES}")
     
     allowed_ingredients = build_allowed_ingredients()
+    category_lookup = build_category_lookup()
     print(f"   Allowed ingredients in filter: {len(allowed_ingredients)}")
     
     all_valid_recipes = []
+    category_counts = {cat: 0 for cat in FLAVOR_CATEGORIES}
+    
     chunk_size = 50000
     total_rows = limit_rows or LIMIT_ROWS
     
     with tqdm(total=total_rows, unit='rows', desc="Scanning") as pbar:
         for chunk in pd.read_csv(input_path, chunksize=chunk_size, on_bad_lines='skip', nrows=total_rows):
             for idx, row in chunk.iterrows():
-                try:
-                    # Parse NER column (ingredient names)
-                    ner_list = ast.literal_eval(row['NER'])
+                # Stop if we have enough recipes
+                if len(all_valid_recipes) >= MAX_RECIPES:
+                    break
                     
-                    if validate_recipe(ner_list, allowed_ingredients):
+                try:
+                    ner_list = ast.literal_eval(row['NER'])
+                    directions = ast.literal_eval(row['directions'])
+                    is_valid, match_ratio = validate_recipe(ner_list, directions, allowed_ingredients, category_lookup)
+                    
+                    if is_valid:
+                        # Get primary category for balancing
+                        recipe_cats = get_recipe_categories(ner_list, category_lookup)
+                        flavor_cats = recipe_cats.intersection(set(FLAVOR_CATEGORIES))
+                        
+                        # Find the least represented category this recipe belongs to
+                        if flavor_cats:
+                            min_cat = min(flavor_cats, key=lambda c: category_counts.get(c, 0))
+                            category_counts[min_cat] += 1
+                        
                         all_valid_recipes.append(row)
                         
                 except (ValueError, SyntaxError):
-                    continue  # Skip rows with malformed NER data
+                    continue
             
             pbar.update(len(chunk))
+            
+            if len(all_valid_recipes) >= MAX_RECIPES:
+                print(f"\n   Reached {MAX_RECIPES} recipes, stopping...")
+                break
     
     # Create final DataFrame and remove duplicates
     print("\n📊 Consolidating results...")
     final_df = pd.DataFrame(all_valid_recipes).drop_duplicates(subset=['title', 'link'])
     
+    # If still too many, sample down
+    if len(final_df) > MAX_RECIPES:
+        final_df = final_df.sample(n=MAX_RECIPES, random_state=42)
+    
     # Save to output file
     final_df.to_csv(output_path, index=False)
     print(f"✅ Saved {len(final_df)} unique valid recipes to: {output_path.name}")
+    
+    # Print category distribution
+    print("\n📊 Category distribution in final dataset:")
+    for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
+        print(f"   {cat}: {count}")
     
     return len(final_df)
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import { useMemo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -61,8 +61,8 @@ const RecipeGraph = ({ graph, recipeName }) => {
     return { initialNodes: nodes, initialEdges: edges };
   }, [graph]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, , onEdgesChange] = useEdgesState(initialEdges);
 
   if (!graph || !graph.nodes || graph.nodes.length === 0) {
     return (

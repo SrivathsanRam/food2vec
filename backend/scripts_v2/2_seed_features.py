@@ -19,11 +19,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Target table
-TABLE_NAME = "recipes"
+TABLE_NAME = "recipes_big"
 
 # CSV file path
 SCRIPT_DIR = Path(__file__).parent
-CSV_FILE = SCRIPT_DIR / "strict_filtered_balanced_sample_large_6_ingredients_no_bucket.csv"
+CSV_FILE = SCRIPT_DIR / "2_strict_filtered_balanced_sample_large_6_ingredients_no_bucket.csv"
 
 
 def get_supabase_client() -> Client:
