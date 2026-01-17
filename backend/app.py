@@ -141,6 +141,12 @@ def graph_to_pyg_data(graph: dict):
     if not nodes:
         return None
     
+    # Build node ID mapping (handle non-sequential or 1-indexed IDs)
+    node_id_to_idx = {}
+    for idx, node in enumerate(nodes):
+        original_id = node.get("id", idx)
+        node_id_to_idx[original_id] = idx
+    
     # Build node features
     node_features = []
     for node in nodes:
@@ -158,14 +164,25 @@ def graph_to_pyg_data(graph: dict):
         node_features.append(feat)
     
     x = torch.tensor(np.array(node_features), dtype=torch.float)
+    num_nodes = x.size(0)
     
-    # Build edge indices
+    # Build edge indices with ID remapping
     edge_list = []
     for edge in edges:
         source = edge.get("source")
         target = edge.get("target")
         if source is not None and target is not None:
-            edge_list.append([source, target])
+            # Remap to sequential indices
+            source_idx = node_id_to_idx.get(source)
+            target_idx = node_id_to_idx.get(target)
+            
+            # Skip invalid edges
+            if source_idx is None or target_idx is None:
+                continue
+            if source_idx >= num_nodes or target_idx >= num_nodes:
+                continue
+            
+            edge_list.append([source_idx, target_idx])
     
     if edge_list:
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
