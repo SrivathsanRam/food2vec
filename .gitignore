@@ -251,3 +251,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# HUGE FILE
+RecipeNLG_dataset.csv
+*.csv
