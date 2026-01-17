@@ -3,6 +3,7 @@ import SearchBar from "./SearchBar";
 import SearchResults from "./SearchResults";
 import "./LandingPage.css";
 import SliderComponent from "./SliderComponent";
+import foodNamesCache from "../services/foodNamesCache";
 import Button from "@mui/material/Button";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
@@ -13,6 +14,7 @@ import TextField from "@mui/material/TextField";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import CircularProgress from "@mui/material/CircularProgress";
+import Alert from "@mui/material/Alert";
 
 // Modern, improved modal style with smooth animations and better UI
 const style = {
@@ -107,6 +109,8 @@ const LandingPage = () => {
   const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createStatus, setCreateStatus] = useState(null); // null, 'success', 'error'
 
   // Update displayed results when kValue changes
   useEffect(() => {
@@ -149,17 +153,21 @@ const LandingPage = () => {
   };
 
   const handleModalClose = () => {
+    if (isCreating) return; // Don't allow closing while creating
     setIsModalOpen(false);
+    setRecipeName("");
+    setRecipeSteps("");
+    setCreateStatus(null);
   };
 
   const handleSubmit = async () => {
-    const nameToSubmit = recipeName;
-    const stepsToSubmit = recipeSteps;
-    
-    setRecipeName("");
-    setRecipeSteps("");
-    handleModalClose();
-    setIsLoading(true);
+    if (!recipeName.trim() || !recipeSteps.trim()) {
+      setCreateStatus('error');
+      return;
+    }
+
+    setIsCreating(true);
+    setCreateStatus(null);
 
     try {
       const response = await fetch("http://localhost:5000/api/recipe", {
@@ -167,27 +175,28 @@ const LandingPage = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: nameToSubmit, steps: stepsToSubmit }),
+        body: JSON.stringify({ name: recipeName, steps: recipeSteps }),
       });
 
       if (!response.ok) {
-        setIsSnackbarOpen(true);
-        setSnackbarMessage("Failed to create recipe.");
+        setCreateStatus('error');
         return;
       }
 
-      setIsSnackbarOpen(true);
-      setSnackbarMessage("Created recipe successfully.");
-      // Clear search results after creating a recipe
+      setCreateStatus('success');
+      
+      // Refresh the food names cache with the new recipe
+      await foodNamesCache.forceRefresh();
+      
+      // Clear search results
       setAllResults([]);
       setSearchResults([]);
       setHasSearched(false);
     } catch (error) {
       console.error("Create recipe error:", error);
-      setIsSnackbarOpen(true);
-      setSnackbarMessage("Failed to create recipe.");
+      setCreateStatus('error');
     } finally {
-      setIsLoading(false);
+      setIsCreating(false);
     }
   };
 
@@ -293,16 +302,49 @@ const LandingPage = () => {
                 multiline
                 rows={6}
                 sx={textInputStyle}
+                disabled={isCreating || createStatus === 'success'}
               />
+
+              {createStatus === 'success' && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                  Recipe created successfully! The embedding has been generated.
+                </Alert>
+              )}
+
+              {createStatus === 'error' && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  Failed to create recipe. Please check your inputs and try again.
+                </Alert>
+              )}
+
+              {isCreating && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                  <CircularProgress size={20} />
+                  <Typography variant="body2" color="text.secondary">
+                    Creating recipe and generating embedding...
+                  </Typography>
+                </Box>
+              )}
             </Box>
 
             <Box sx={modalFooterStyle}>
-              <Button onClick={handleModalClose} variant="outlined">
-                Cancel
+              <Button 
+                onClick={handleModalClose} 
+                variant="outlined"
+                disabled={isCreating}
+              >
+                {createStatus === 'success' ? 'Close' : 'Cancel'}
               </Button>
-              <Button onClick={handleSubmit} variant="contained">
-                Create
-              </Button>
+              {createStatus !== 'success' && (
+                <Button 
+                  onClick={handleSubmit} 
+                  variant="contained"
+                  disabled={isCreating || isGenerating || !recipeName.trim() || !recipeSteps.trim()}
+                  startIcon={isCreating ? <CircularProgress size={16} color="inherit" /> : null}
+                >
+                  {isCreating ? 'Creating...' : 'Create'}
+                </Button>
+              )}
             </Box>
           </Box>
         </Modal>

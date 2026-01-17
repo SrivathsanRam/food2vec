@@ -207,6 +207,16 @@ def generate_gnn_embedding(graph: dict) -> list[float]:
         if data is None:
             return [0.0] * EMBEDDING_DIM
         
+        # Validate edge_index before running through model
+        num_nodes = data.x.size(0)
+        if data.edge_index.numel() > 0:
+            max_idx = data.edge_index.max().item()
+            if max_idx >= num_nodes:
+                print(f"Warning: edge_index has invalid indices (max={max_idx}, nodes={num_nodes}). Filtering edges.")
+                # Filter out invalid edges
+                valid_mask = (data.edge_index[0] < num_nodes) & (data.edge_index[1] < num_nodes)
+                data.edge_index = data.edge_index[:, valid_mask]
+        
         # Add batch dimension
         data.batch = torch.zeros(data.x.size(0), dtype=torch.long)
         
@@ -327,23 +337,45 @@ def get_all_food_names():
         if not supabase:
             return jsonify({"names": [], "version": "", "error": "Database not configured"})
         
-        # Get all recipe names
-        result = supabase.table(TABLE_NAME) \
-            .select("name") \
-            .order("name") \
-            .execute()
+        # Get all recipe names - paginate to overcome Supabase 1000 row limit
+        all_names = []
+        page_size = 1000
+        offset = 0
         
-        names = [row["name"] for row in result.data]
+        while True:
+            result = supabase.table(TABLE_NAME) \
+                .select("name") \
+                .order("name") \
+                .range(offset, offset + page_size - 1) \
+                .execute()
+            
+            if not result.data:
+                break
+            
+            all_names.extend([row["name"] for row in result.data])
+            
+            # If we got fewer than page_size, we've reached the end
+            if len(result.data) < page_size:
+                break
+            
+            offset += page_size
+        
+        names = all_names
         
         # Generate a version hash based on the names list
         # This will change when items are added/removed/modified
         version = hashlib.md5("".join(names).encode()).hexdigest()[:12]
         
-        return jsonify({
+        response = jsonify({
             "names": names,
             "version": version,
             "count": len(names)
         })
+        # Prevent browser caching
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
         
     except Exception as e:
         print(f"Get food names error: {e}")
