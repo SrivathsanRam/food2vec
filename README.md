@@ -114,7 +114,3 @@ Without Pinecone configuration, the app uses mock data for demonstration.
 - **Backend**: Flask, Flask-CORS, Pinecone
 - **Frontend**: React, CSS3
 - **Vector Database**: Pinecone
-
-## License
-
-MIT License - Built for HacknRoll 2026 🚀
