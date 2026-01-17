@@ -23,21 +23,13 @@ class FoodNamesCache {
     this.listeners.forEach(listener => listener(this.names));
   }
 
-  // Load cache from localStorage
-  loadFromStorage() {
+  // Clear localStorage cache
+  clearStorage() {
     try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { names, version } = JSON.parse(cached);
-        this.names = names || [];
-        this.version = version || '';
-        this.isLoaded = true;
-        return true;
-      }
+      localStorage.removeItem(CACHE_KEY);
     } catch (e) {
-      console.error('Error loading cache from storage:', e);
+      console.error('Error clearing cache from storage:', e);
     }
-    return false;
   }
 
   // Save cache to localStorage
@@ -57,14 +49,9 @@ class FoodNamesCache {
     if (this.isLoading) return;
     this.isLoading = true;
 
-    // First, try to load from localStorage for instant access
-    this.loadFromStorage();
-    if (this.isLoaded) {
-      this.notifyListeners();
-    }
-
-    // Then check if we need to refresh from the server
-    await this.checkAndRefresh();
+    // Clear old cache and fetch fresh data from server on page load
+    this.clearStorage();
+    await this.refreshNames();
 
     // Start periodic version checks
     this.startVersionChecks();
@@ -91,8 +78,21 @@ class FoodNamesCache {
   // Refresh names from the server
   async refreshNames() {
     try {
-      const response = await fetch(`${API_BASE}/food-names`);
+      console.log('Fetching fresh food names from server...');
+      
+      // Add cache-busting timestamp to avoid browser caching
+      const timestamp = Date.now();
+      const response = await fetch(`${API_BASE}/food-names?t=${timestamp}`, {
+        method: 'GET',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
       const { names, version, count } = await response.json();
+      
+      console.log(`Received ${count} food names from server, version: ${version}`);
       
       if (names && names.length > 0) {
         this.names = names;
@@ -155,6 +155,11 @@ class FoodNamesCache {
 
   // Force a refresh (useful after adding new items)
   async forceRefresh() {
+    console.log('Force refreshing food names cache...');
+    this.clearStorage();
+    this.names = [];
+    this.version = '';
+    this.isLoaded = false;
     await this.refreshNames();
   }
 

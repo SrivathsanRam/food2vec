@@ -38,8 +38,42 @@ def extract_tokens(steps):
     return tokens_array
 
 def extract_graph_representation(steps):
-    response = openai_query("I need you to return a json which contains nodes, where each node contains a increasing numeric id, a type (ingredient, intermediate or final), label which contains the ingredient name for ingredients or Step (number) result for intermediate or final steps, and state which is either raw for ingredients or the action perform at that step. The json should also contain edges where it consists of steps, action, source and the target, where the source and target is the node id. The json should also contain metadata which contains step_count, total_edges, total_nodes, ingredient_count.", 
-                            steps)
+    response = openai_query(
+        """I need you to return a JSON which contains nodes and edges for a recipe graph.
+
+IMPORTANT: Node IDs must be 0-indexed (start from 0, not 1) and be sequential (0, 1, 2, 3...).
+
+Format:
+- "nodes": array of {"id": int (0-indexed), "type": "ingredient"|"intermediate"|"final", "label": string, "state": string}
+  - Ingredients have type "ingredient", label is the ingredient name, state is "raw"
+  - Intermediate steps have type "intermediate", label is "Step N result", state is the action performed
+  - Final dish has type "final", label is "Final dish", state is the final action
+
+- "edges": array of {"step": int, "action": string, "source": int, "target": int}
+  - source and target must be valid node IDs (0-indexed, matching nodes array)
+  - source is the input node, target is the output node
+
+- "metadata": {"step_count": int, "total_edges": int, "total_nodes": int, "ingredient_count": int}
+
+Example for 3 ingredients combined in 2 steps:
+{
+  "nodes": [
+    {"id": 0, "type": "ingredient", "label": "flour", "state": "raw"},
+    {"id": 1, "type": "ingredient", "label": "sugar", "state": "raw"},
+    {"id": 2, "type": "ingredient", "label": "butter", "state": "raw"},
+    {"id": 3, "type": "intermediate", "label": "Step 1 result", "state": "mixed"},
+    {"id": 4, "type": "final", "label": "Final dish", "state": "baked"}
+  ],
+  "edges": [
+    {"step": 1, "action": "mix", "source": 0, "target": 3},
+    {"step": 1, "action": "mix", "source": 1, "target": 3},
+    {"step": 1, "action": "mix", "source": 2, "target": 3},
+    {"step": 2, "action": "bake", "source": 3, "target": 4}
+  ],
+  "metadata": {"step_count": 2, "total_edges": 4, "total_nodes": 5, "ingredient_count": 3}
+}""",
+        steps
+    )
     text_content = response.output[0].content[0].text
 
     # Remove markdown code blocks
@@ -47,7 +81,11 @@ def extract_graph_representation(steps):
     clean_text = re.sub(r'```\n?', '', clean_text).lstrip('json')
     
     # Convert from string to json format
-    json_obj = json.loads(clean_text)
+    try:
+        json_obj = json.loads(clean_text)
+    except json.JSONDecodeError:
+        # Return empty graph if parsing fails
+        json_obj = {"nodes": [], "edges": [], "metadata": {}}
     
     return json_obj
     
@@ -82,3 +120,16 @@ def extract_ingredients(steps):
         return ingredients
     
     return []
+
+
+def generate_recipe_steps(recipe_name):
+    """Generate recipe steps from a recipe name using AI."""
+    response = openai_query(
+        "You are a professional chef. Given a recipe name, generate detailed cooking instructions. "
+        "Return ONLY the step-by-step cooking instructions as a single paragraph. "
+        "Include specific ingredients with measurements and detailed cooking techniques. "
+        "Make it realistic and delicious.",
+        f"Generate detailed cooking steps for: {recipe_name}"
+    )
+    text_content = response.output[0].content[0].text
+    return text_content.strip()

@@ -1,26 +1,38 @@
 const SliderComponent = ({ kValue, setKValue }) => {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="bg-white p-8 rounded-2xl shadow-lg w-96">
-        <div className="mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-sm font-medium text-gray-700">
-              Selected top n nearest vectors:{" "}
+    <div style={{ width: '100%', maxWidth: '500px', margin: '16px auto 0 auto' }}>
+      <div style={{ 
+        backgroundColor: 'white', 
+        padding: '16px 20px', 
+        borderRadius: '8px', 
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+        border: '1px solid #ddd'
+      }}>
+        <div style={{ marginBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ fontSize: '0.9rem', fontWeight: '500', color: '#555' }}>
+              Top results:
             </label>
-            <span className="text-3xl font-bold text-indigo-600">{kValue}</span>
+            <span style={{ fontSize: '1.25rem', fontWeight: '600', color: '#333' }}>{kValue}</span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-600">1</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: '500', color: '#888' }}>1</span>
             <input
               type="range"
               min="1"
               max="10"
               value={kValue}
               onChange={(e) => setKValue(Number(e.target.value))}
-              className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              style={{ 
+                flex: 1, 
+                height: '6px', 
+                borderRadius: '4px', 
+                cursor: 'pointer',
+                accentColor: '#333'
+              }}
             />
-            <span className="text-sm font-medium text-gray-600">10</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: '500', color: '#888' }}>10</span>
           </div>
         </div>
       </div>

@@ -8,6 +8,7 @@ const SearchBar = ({ onSearch }) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [cacheReady, setCacheReady] = useState(false);
+  const [isValidSelection, setIsValidSelection] = useState(false); // Track if user selected from autocomplete
   const inputRef = useRef(null);
   const suggestionsRef = useRef(null);
 
@@ -39,6 +40,11 @@ const SearchBar = ({ onSearch }) => {
     if (cacheReady) {
       const results = foodNamesCache.search(query, 10);
       setSuggestions(results);
+      
+      // Check if current query exactly matches a valid recipe name
+      const allNames = foodNamesCache.getAllNames();
+      const exactMatch = allNames.some(name => name.toLowerCase() === query.toLowerCase());
+      setIsValidSelection(exactMatch);
     } else {
       // Fallback to API if cache not ready
       const fetchSuggestions = async () => {
@@ -78,6 +84,7 @@ const SearchBar = ({ onSearch }) => {
     setQuery(e.target.value);
     setShowSuggestions(true);
     setSelectedIndex(-1);
+    setIsValidSelection(false); // Reset valid selection when user types
   };
 
   const handleKeyDown = (e) => {
@@ -93,7 +100,8 @@ const SearchBar = ({ onSearch }) => {
       e.preventDefault();
       if (selectedIndex >= 0 && suggestions[selectedIndex]) {
         selectSuggestion(suggestions[selectedIndex]);
-      } else {
+      } else if (isValidSelection) {
+        // Only allow search if it's a valid selection
         handleSearch();
       }
     } else if (e.key === 'Escape') {
@@ -105,11 +113,12 @@ const SearchBar = ({ onSearch }) => {
     setQuery(suggestion);
     setShowSuggestions(false);
     setSuggestions([]);
+    setIsValidSelection(true); // Mark as valid since user selected from list
     onSearch(suggestion);
   };
 
   const handleSearch = () => {
-    if (query.trim()) {
+    if (query.trim() && isValidSelection) {
       setShowSuggestions(false);
       onSearch(query);
     }
@@ -128,7 +137,12 @@ const SearchBar = ({ onSearch }) => {
           onFocus={() => setShowSuggestions(true)}
           className="search-input"
         />
-        <button onClick={handleSearch} className="search-button">
+        <button 
+          onClick={handleSearch} 
+          className={`search-button ${!isValidSelection ? 'disabled' : ''}`}
+          disabled={!isValidSelection}
+          title={!isValidSelection ? 'Please select a recipe from the suggestions' : ''}
+        >
           Search
         </button>
       </div>
@@ -148,6 +162,12 @@ const SearchBar = ({ onSearch }) => {
             </li>
           ))}
         </ul>
+      )}
+      
+      {query.length > 0 && !isValidSelection && !showSuggestions && (
+        <div className="search-hint">
+          Please select a recipe from the suggestions
+        </div>
       )}
     </div>
   );

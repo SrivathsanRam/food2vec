@@ -145,6 +145,12 @@ def graph_to_pyg_data(graph: dict):
     if not nodes:
         return None
     
+    # Build node ID mapping (handle non-sequential or 1-indexed IDs)
+    node_id_to_idx = {}
+    for idx, node in enumerate(nodes):
+        original_id = node.get("id", idx)
+        node_id_to_idx[original_id] = idx
+    
     # Build node features
     node_features = []
     for node in nodes:
@@ -162,14 +168,25 @@ def graph_to_pyg_data(graph: dict):
         node_features.append(feat)
     
     x = torch.tensor(np.array(node_features), dtype=torch.float)
+    num_nodes = x.size(0)
     
-    # Build edge indices
+    # Build edge indices with ID remapping
     edge_list = []
     for edge in edges:
         source = edge.get("source")
         target = edge.get("target")
         if source is not None and target is not None:
-            edge_list.append([source, target])
+            # Remap to sequential indices
+            source_idx = node_id_to_idx.get(source)
+            target_idx = node_id_to_idx.get(target)
+            
+            # Skip invalid edges
+            if source_idx is None or target_idx is None:
+                continue
+            if source_idx >= num_nodes or target_idx >= num_nodes:
+                continue
+            
+            edge_list.append([source_idx, target_idx])
     
     if edge_list:
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
@@ -193,6 +210,16 @@ def generate_gnn_embedding(graph: dict) -> list[float]:
         data = graph_to_pyg_data(graph)
         if data is None:
             return [0.0] * EMBEDDING_DIM
+        
+        # Validate edge_index before running through model
+        num_nodes = data.x.size(0)
+        if data.edge_index.numel() > 0:
+            max_idx = data.edge_index.max().item()
+            if max_idx >= num_nodes:
+                print(f"Warning: edge_index has invalid indices (max={max_idx}, nodes={num_nodes}). Filtering edges.")
+                # Filter out invalid edges
+                valid_mask = (data.edge_index[0] < num_nodes) & (data.edge_index[1] < num_nodes)
+                data.edge_index = data.edge_index[:, valid_mask]
         
         # Add batch dimension
         data.batch = torch.zeros(data.x.size(0), dtype=torch.long)
@@ -314,23 +341,45 @@ def get_all_food_names():
         if not supabase:
             return jsonify({"names": [], "version": "", "error": "Database not configured"})
         
-        # Get all recipe names
-        result = supabase.table(TABLE_NAME) \
-            .select("name") \
-            .order("name") \
-            .execute()
+        # Get all recipe names - paginate to overcome Supabase 1000 row limit
+        all_names = []
+        page_size = 1000
+        offset = 0
         
-        names = [row["name"] for row in result.data]
+        while True:
+            result = supabase.table(TABLE_NAME) \
+                .select("name") \
+                .order("name") \
+                .range(offset, offset + page_size - 1) \
+                .execute()
+            
+            if not result.data:
+                break
+            
+            all_names.extend([row["name"] for row in result.data])
+            
+            # If we got fewer than page_size, we've reached the end
+            if len(result.data) < page_size:
+                break
+            
+            offset += page_size
+        
+        names = all_names
         
         # Generate a version hash based on the names list
         # This will change when items are added/removed/modified
         version = hashlib.md5("".join(names).encode()).hexdigest()[:12]
         
-        return jsonify({
+        response = jsonify({
             "names": names,
             "version": version,
             "count": len(names)
         })
+        # Prevent browser caching
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
         
     except Exception as e:
         print(f"Get food names error: {e}")
@@ -785,6 +834,27 @@ def search_similar_recipes():
     
     except Exception as e:
         print(f"Similar search error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/recipe/generate', methods=['POST'])
+def generate_recipe():
+    """Generate recipe steps from a recipe name using AI."""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    
+    if not name:
+        return jsonify({"error": "Recipe name is required"}), 400
+    
+    try:
+        steps = generate_recipe_steps(name)
+        return jsonify({
+            "name": name,
+            "steps": steps,
+            "message": "Recipe steps generated successfully"
+        })
+    except Exception as e:
+        print(f"Generate recipe error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
