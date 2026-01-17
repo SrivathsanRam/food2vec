@@ -51,6 +51,20 @@ def generate_embedding(tokens: list[str]) -> list[float]:
     return v.tolist()
 
 
+def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
+    """Calculate cosine similarity between two vectors."""
+    if not vec1 or not vec2 or len(vec1) != len(vec2):
+        return 0.0
+    a = np.array(vec1, dtype=np.float32)
+    b = np.array(vec2, dtype=np.float32)
+    dot_product = np.dot(a, b)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return float(dot_product / (norm_a * norm_b))
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
@@ -151,7 +165,7 @@ def autocomplete():
 
 @app.route('/api/search', methods=['POST'])
 def search_food():
-    """Search for recipes by title using Supabase."""
+    """Search for recipes by title using Supabase with cosine similarity scoring."""
     data = request.get_json()
     query = data.get('query', '').strip()
     top_k = data.get('top_k', 10)
@@ -164,25 +178,36 @@ def search_food():
         if not supabase:
             return jsonify({"error": "Database not configured"}), 500
         
+        # Generate query embedding for similarity scoring
+        query_tokens = [f"ING_{word.strip().lower().replace(' ', '_')}" for word in query.split()]
+        query_embedding = generate_embedding(query_tokens)
+        
         # Search for recipes with titles matching the query
         result = supabase.table("recipes") \
-            .select("id, name, ingredients, directions, ner, graph_representation") \
+            .select("id, name, ingredients, directions, ner, graph_representation, embedding") \
             .ilike("name", f"%{query}%") \
             .limit(top_k) \
             .execute()
         
-        # Format results
+        # Format results with cosine similarity scores
         results = []
         for row in result.data:
-            # Calculate a simple relevance score based on match position
-            name_lower = row["name"].lower()
-            query_lower = query.lower()
-            if name_lower.startswith(query_lower):
-                score = 0.95
-            elif query_lower in name_lower:
-                score = 0.80
+            # Calculate cosine similarity if embedding exists
+            recipe_embedding = row.get("embedding")
+            if recipe_embedding:
+                score = cosine_similarity(query_embedding, recipe_embedding)
+                # Normalize to 0-1 range (cosine similarity can be -1 to 1)
+                score = (score + 1) / 2
             else:
-                score = 0.60
+                # Fallback to simple text matching score
+                name_lower = row["name"].lower()
+                query_lower = query.lower()
+                if name_lower.startswith(query_lower):
+                    score = 0.95
+                elif query_lower in name_lower:
+                    score = 0.80
+                else:
+                    score = 0.60
             
             results.append({
                 "id": row["id"],
@@ -191,7 +216,7 @@ def search_food():
                 "directions": row["directions"],
                 "ner": row.get("ner", []),
                 "graph": row.get("graph_representation", {}),
-                "score": score,
+                "score": round(score, 4),
                 "category": categorize_recipe(row.get("ner", []))
             })
         

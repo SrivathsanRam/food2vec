@@ -21,27 +21,15 @@ const SearchResults = ({ results, isLoading }) => {
     return (
       <div className="results-container">
         <div className="no-results">
-          <span className="no-results-icon">🍽️</span>
-          <p>No recipes found. Try a different search!</p>
+          <p>No recipes found. Try a different search.</p>
         </div>
       </div>
     );
   }
 
-  const getCategoryEmoji = (category) => {
-    const emojis = {
-      'Desserts': '🍰',
-      'Main Course': '🍖',
-      'Salads & Sides': '🥗',
-      'Appetizers': '🍴',
-      'Other': '🍳',
-    };
-    return emojis[category] || '🍳';
-  };
-
   const getScoreColor = (score) => {
-    if (score >= 0.9) return '#10b981';
-    if (score >= 0.7) return '#f59e0b';
+    if (score >= 0.9) return '#22c55e';
+    if (score >= 0.7) return '#eab308';
     return '#6366f1';
   };
 
@@ -59,20 +47,16 @@ const SearchResults = ({ results, isLoading }) => {
   return (
     <div className="results-container">
       <h2 className="results-title">
-        🍳 Found {results.length} Recipe{results.length !== 1 ? 's' : ''}
+        Found {results.length} recipe{results.length !== 1 ? 's' : ''}
       </h2>
       <div className="results-list">
         {results.map((result, index) => (
           <div
             key={`${result.name}-${index}`}
             className={`result-card ${expandedRecipe === result.id ? 'expanded' : ''}`}
-            style={{ animationDelay: `${index * 0.05}s` }}
           >
             <div className="result-header" onClick={() => toggleExpand(result.id)}>
               <div className="result-title-section">
-                <span className="result-emoji">
-                  {getCategoryEmoji(result.category)}
-                </span>
                 <div className="result-info">
                   <h3 className="result-name">{result.name}</h3>
                   <span className="result-category">{result.category}</span>
@@ -92,7 +76,7 @@ const SearchResults = ({ results, isLoading }) => {
                   </span>
                 </div>
                 <span className="expand-icon">
-                  {expandedRecipe === result.id ? '▼' : '▶'}
+                  {expandedRecipe === result.id ? '−' : '+'}
                 </span>
               </div>
             </div>
@@ -102,7 +86,7 @@ const SearchResults = ({ results, isLoading }) => {
                 {/* Ingredients */}
                 {result.ingredients && result.ingredients.length > 0 && (
                   <div className="detail-section">
-                    <h4>🥘 Ingredients ({result.ingredients.length})</h4>
+                    <h4>Ingredients ({result.ingredients.length})</h4>
                     <ul className="ingredients-list">
                       {result.ingredients.map((ing, i) => (
                         <li key={i}>{ing}</li>
@@ -114,7 +98,7 @@ const SearchResults = ({ results, isLoading }) => {
                 {/* Directions */}
                 {result.directions && result.directions.length > 0 && (
                   <div className="detail-section">
-                    <h4>📝 Directions</h4>
+                    <h4>Directions</h4>
                     <ol className="directions-list">
                       {result.directions.map((step, i) => (
                         <li key={i}>{step}</li>
@@ -133,7 +117,7 @@ const SearchResults = ({ results, isLoading }) => {
                         toggleGraph(result.id);
                       }}
                     >
-                      {showGraph === result.id ? '🔽 Hide Recipe Flow' : '🔗 Show Recipe Flow'}
+                      {showGraph === result.id ? 'Hide Recipe Flow' : 'Show Recipe Flow'}
                     </button>
                     
                     {showGraph === result.id && (
@@ -145,7 +129,7 @@ const SearchResults = ({ results, isLoading }) => {
                 {/* NER Tags */}
                 {result.ner && result.ner.length > 0 && (
                   <div className="detail-section">
-                    <h4>🏷️ Key Ingredients</h4>
+                    <h4>Key Ingredients</h4>
                     <div className="ner-tags">
                       {result.ner.map((tag, i) => (
                         <span key={i} className="ner-tag">{tag}</span>

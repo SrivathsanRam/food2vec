@@ -118,11 +118,10 @@ const SearchBar = ({ onSearch }) => {
   return (
     <div className="search-container">
       <div className="search-bar">
-        <span className="search-icon">🔍</span>
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search for any food..."
+          placeholder="Search recipes..."
           value={query}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
@@ -145,7 +144,6 @@ const SearchBar = ({ onSearch }) => {
               onClick={() => selectSuggestion(suggestion)}
               onMouseEnter={() => setSelectedIndex(index)}
             >
-              <span className="suggestion-icon">🍴</span>
               {suggestion}
             </li>
           ))}

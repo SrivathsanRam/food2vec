@@ -39,23 +39,16 @@ const LandingPage = () => {
         <div className="logo-container">
           <h1 className="logo-text">Food2Vec</h1>
         </div>
-        <p className="tagline">Discover recipes using AI-powered vector search</p>
+        <p className="tagline">Discover recipes using AI-powered search</p>
         
         <SearchBar onSearch={handleSearch} />
         
         <div className="features">
-          <div className="feature">
-       
-            <span>Smart Search</span>
-          </div>
-          <div className="feature">
-
-            <span>AI Powered</span>
-          </div>
-          <div className="feature">
-       
-            <span>Recipe Flow</span>
-          </div>
+          <span className="feature">Smart Search</span>
+          <span className="feature">•</span>
+          <span className="feature">AI Powered</span>
+          <span className="feature">•</span>
+          <span className="feature">Recipe Flow</span>
         </div>
       </div>
 
