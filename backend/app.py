@@ -1,8 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import json
 import hashlib
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -17,7 +21,180 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Vector dimension for embeddings
 EMBEDDING_DIM = 512
+NODE_FEATURE_DIM = 384  # MiniLM output dimension
+HIDDEN_DIM = 256
 
+# ============== Global Model Cache (loaded once at startup) ==============
+_gnn_model = None
+_sentence_encoder = None
+_ingredient_cache = {}
+_model_loaded = False
+
+
+# ============== GNN Model Definition ==============
+
+class RecipeGAT(nn.Module):
+    """Graph Attention Network for recipe embeddings."""
+    
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
+        super().__init__()
+        from torch_geometric.nn import GATConv, global_mean_pool
+        self.conv1 = GATConv(input_dim, hidden_dim, heads=4, concat=False, dropout=0.2)
+        self.conv2 = GATConv(hidden_dim, hidden_dim, heads=4, concat=False, dropout=0.2)
+        self.conv3 = GATConv(hidden_dim, output_dim, heads=1, concat=False, dropout=0.2)
+        self.dropout = nn.Dropout(0.2)
+        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        self.bn2 = nn.BatchNorm1d(hidden_dim)
+        self.global_mean_pool = global_mean_pool
+    
+    def forward(self, x, edge_index, batch):
+        x = F.elu(self.conv1(x, edge_index))
+        x = self.bn1(x)
+        x = self.dropout(x)
+        
+        x = F.elu(self.conv2(x, edge_index))
+        x = self.bn2(x)
+        x = self.dropout(x)
+        
+        x = self.conv3(x, edge_index)
+        x = self.global_mean_pool(x, batch)
+        return x
+
+
+def load_models():
+    """Load GNN model and sentence encoder at startup."""
+    global _gnn_model, _sentence_encoder, _model_loaded
+    
+    if _model_loaded:
+        return True
+    
+    try:
+        # Load sentence encoder
+        from sentence_transformers import SentenceTransformer
+        _sentence_encoder = SentenceTransformer('all-MiniLM-L6-v2')
+        print("✅ Loaded sentence encoder")
+        
+        # Load GNN model
+        model_dir = os.path.join(os.path.dirname(__file__), 'models')
+        model_path = os.path.join(model_dir, 'recipe_gnn.pt')
+        config_path = os.path.join(model_dir, 'recipe_gnn_config.json')
+        
+        if os.path.exists(model_path) and os.path.exists(config_path):
+            # Load config
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Initialize model with saved config
+            _gnn_model = RecipeGAT(
+                input_dim=config.get("input_dim", NODE_FEATURE_DIM),
+                hidden_dim=config.get("hidden_dim", HIDDEN_DIM),
+                output_dim=config.get("output_dim", EMBEDDING_DIM)
+            )
+            _gnn_model.load_state_dict(torch.load(model_path, map_location='cpu'))
+            _gnn_model.eval()
+            print(f"✅ Loaded GNN model from {model_path}")
+        else:
+            print(f"⚠️ No saved model found at {model_path}, using untrained model")
+            _gnn_model = RecipeGAT(NODE_FEATURE_DIM, HIDDEN_DIM, EMBEDDING_DIM)
+            _gnn_model.eval()
+        
+        _model_loaded = True
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error loading models: {e}")
+        return False
+
+
+def get_ingredient_embedding(ingredient: str) -> np.ndarray:
+    """Get or compute embedding for an ingredient (cached)."""
+    global _ingredient_cache, _sentence_encoder
+    
+    ingredient_lower = ingredient.lower().strip()
+    
+    if ingredient_lower not in _ingredient_cache:
+        if _sentence_encoder is None:
+            load_models()
+        embedding = _sentence_encoder.encode(ingredient_lower, convert_to_numpy=True)
+        _ingredient_cache[ingredient_lower] = embedding.astype(np.float32)
+    
+    return _ingredient_cache[ingredient_lower]
+
+
+def graph_to_pyg_data(graph: dict):
+    """Convert recipe graph to PyTorch Geometric Data object."""
+    from torch_geometric.data import Data
+    
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    
+    if not nodes:
+        return None
+    
+    # Build node features
+    node_features = []
+    for node in nodes:
+        if node.get("type") == "ingredient":
+            label = node.get("label", "unknown")
+            feat = get_ingredient_embedding(label)
+        else:
+            feat = np.zeros(NODE_FEATURE_DIM, dtype=np.float32)
+            if node.get("type") == "intermediate":
+                feat[0] = 1.0
+            elif node.get("type") == "final":
+                feat[1] = 1.0
+        node_features.append(feat)
+    
+    x = torch.tensor(np.array(node_features), dtype=torch.float)
+    
+    # Build edge indices
+    edge_list = []
+    for edge in edges:
+        source = edge.get("source")
+        target = edge.get("target")
+        if source is not None and target is not None:
+            edge_list.append([source, target])
+    
+    if edge_list:
+        edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
+    else:
+        edge_index = torch.zeros((2, 0), dtype=torch.long)
+    
+    return Data(x=x, edge_index=edge_index)
+
+
+def generate_gnn_embedding(graph: dict) -> list[float]:
+    """Generate GNN embedding for a recipe graph."""
+    global _gnn_model
+    
+    if not graph or not graph.get("nodes"):
+        return [0.0] * EMBEDDING_DIM
+    
+    try:
+        if _gnn_model is None:
+            load_models()
+        
+        data = graph_to_pyg_data(graph)
+        if data is None:
+            return [0.0] * EMBEDDING_DIM
+        
+        # Add batch dimension
+        data.batch = torch.zeros(data.x.size(0), dtype=torch.long)
+        
+        with torch.no_grad():
+            embedding = _gnn_model(data.x, data.edge_index, data.batch)
+        
+        # Normalize embedding
+        embedding = F.normalize(embedding, p=2, dim=1)
+        
+        return embedding.squeeze().tolist()
+    
+    except Exception as e:
+        print(f"Error generating GNN embedding: {e}")
+        return [0.0] * EMBEDDING_DIM
+
+
+# ============== Existing Helper Functions ==============
 
 def get_supabase_client() -> Client:
     """Initialize Supabase client."""
@@ -32,7 +209,7 @@ def stable_hash(s: str) -> int:
 
 
 def generate_embedding(tokens: list[str]) -> list[float]:
-    """Generate a deterministic mock embedding from tokens."""
+    """Generate a deterministic mock embedding from tokens (legacy fallback)."""
     v = np.zeros(EMBEDDING_DIM, dtype=np.float32)
     for t in tokens:
         h = stable_hash(t)
@@ -65,15 +242,45 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     return float(dot_product / (norm_a * norm_b))
 
 
+def categorize_recipe(ner_ingredients: list) -> str:
+    """Categorize a recipe based on its ingredients."""
+    if not ner_ingredients:
+        return "Other"
+    
+    ner_lower = [ing.lower() for ing in ner_ingredients]
+    
+    dessert_keywords = ["sugar", "chocolate", "vanilla", "flour", "butter", "cream cheese", "cocoa"]
+    dessert_count = sum(1 for kw in dessert_keywords if any(kw in ing for ing in ner_lower))
+    
+    protein_keywords = ["chicken", "beef", "pork", "fish", "salmon", "shrimp", "bacon", "sausage"]
+    protein_count = sum(1 for kw in protein_keywords if any(kw in ing for ing in ner_lower))
+    
+    veggie_keywords = ["carrot", "broccoli", "pepper", "onion", "tomato", "celery", "lettuce"]
+    veggie_count = sum(1 for kw in veggie_keywords if any(kw in ing for ing in ner_lower))
+    
+    if dessert_count >= 3:
+        return "Desserts"
+    elif protein_count >= 1:
+        return "Main Course"
+    elif veggie_count >= 2:
+        return "Salads & Sides"
+    else:
+        return "Appetizers"
+
+
+# ============== API Endpoints ==============
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
     supabase = get_supabase_client()
     db_status = "connected" if supabase else "not configured"
+    model_status = "loaded" if _model_loaded else "not loaded"
     return jsonify({
         "status": "healthy", 
         "message": "Food2Vec API is running!",
-        "database": db_status
+        "database": db_status,
+        "gnn_model": model_status
     })
 
 
@@ -413,33 +620,123 @@ def get_random_recipes():
         return jsonify({"error": str(e)}), 500
 
 
-def categorize_recipe(ner_ingredients: list) -> str:
-    """Categorize a recipe based on its ingredients."""
-    if not ner_ingredients:
-        return "Other"
+@app.route('/api/recipe/create', methods=['POST'])
+def create_recipe():
+    """Create a new recipe with GNN embedding."""
+    data = request.get_json()
     
-    ner_lower = [ing.lower() for ing in ner_ingredients]
+    required_fields = ['name', 'ingredients', 'directions', 'ner', 'graph_representation']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"Missing required field: {field}"}), 400
     
-    # Check for dessert ingredients
-    dessert_keywords = ["sugar", "chocolate", "vanilla", "flour", "butter", "cream cheese", "cocoa"]
-    dessert_count = sum(1 for kw in dessert_keywords if any(kw in ing for ing in ner_lower))
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"error": "Database not configured"}), 500
+        
+        # Generate GNN embedding from graph
+        graph = data.get('graph_representation', {})
+        embedding = generate_gnn_embedding(graph)
+        
+        recipe_data = {
+            "name": data['name'],
+            "ingredients": data['ingredients'],
+            "directions": data['directions'],
+            "ner": data['ner'],
+            "graph_representation": graph,
+            "tokens": data.get('tokens', []),
+            "embedding": embedding,
+            "link": data.get('link', ''),
+            "source": data.get('source', 'user_submitted')
+        }
+        
+        result = supabase.table("recipes_duplicate_GNN2") \
+            .insert(recipe_data) \
+            .execute()
+        
+        if result.data:
+            return jsonify({
+                "message": "Recipe created successfully",
+                "recipe": result.data[0],
+                "embedding_generated": True
+            }), 201
+        else:
+            return jsonify({"error": "Failed to create recipe"}), 500
     
-    # Check for meat/protein
-    protein_keywords = ["chicken", "beef", "pork", "fish", "salmon", "shrimp", "bacon", "sausage"]
-    protein_count = sum(1 for kw in protein_keywords if any(kw in ing for ing in ner_lower))
+    except Exception as e:
+        print(f"Create recipe error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/search/similar', methods=['POST'])
+def search_similar_recipes():
+    """Find similar recipes using GNN embeddings."""
+    data = request.get_json()
     
-    # Check for vegetables
-    veggie_keywords = ["carrot", "broccoli", "pepper", "onion", "tomato", "celery", "lettuce"]
-    veggie_count = sum(1 for kw in veggie_keywords if any(kw in ing for ing in ner_lower))
+    recipe_id = data.get('recipe_id')
+    graph = data.get('graph')
+    top_k = data.get('top_k', 10)
     
-    if dessert_count >= 3:
-        return "Desserts"
-    elif protein_count >= 1:
-        return "Main Course"
-    elif veggie_count >= 2:
-        return "Salads & Sides"
-    else:
-        return "Appetizers"
+    try:
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"error": "Database not configured"}), 500
+        
+        if recipe_id:
+            result = supabase.table("recipes_duplicate_GNN2") \
+                .select("embedding") \
+                .eq("id", recipe_id) \
+                .single() \
+                .execute()
+            
+            if not result.data or not result.data.get('embedding'):
+                return jsonify({"error": "Recipe not found or has no embedding"}), 404
+            
+            query_embedding = result.data['embedding']
+        elif graph:
+            query_embedding = generate_gnn_embedding(graph)
+        else:
+            return jsonify({"error": "Either recipe_id or graph is required"}), 400
+        
+        result = supabase.rpc(
+            "search_recipes_gnn",
+            {
+                "query_embedding": query_embedding,
+                "match_threshold": 0.5,
+                "match_count": top_k
+            }
+        ).execute()
+        
+        results = []
+        for row in result.data:
+            results.append({
+                "id": row["id"],
+                "name": row["name"],
+                "ingredients": row.get("ingredients", []),
+                "directions": row.get("directions", []),
+                "ner": row.get("ner", []),
+                "score": row.get("similarity", 0),
+                "category": categorize_recipe(row.get("ner", []))
+            })
+        
+        return jsonify({
+            "results": results,
+            "count": len(results),
+            "message": "Similar recipes found"
+        })
+    
+    except Exception as e:
+        print(f"Similar search error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============== Startup ==============
+
+# Load models when app starts
+with app.app_context():
+    print("🚀 Starting Flask app...")
+    load_models()
 
 
 if __name__ == '__main__':

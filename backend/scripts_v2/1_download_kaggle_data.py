@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
-OUTPUT_FILENAME = SCRIPT_DIR / '2_strict_filtered_balanced_sample_large_6_ingredients_no_bucket.csv'
+OUTPUT_FILENAME = SCRIPT_DIR / '4_strict_filtered_balanced_sample_large_6_ingredients_no_bucket.csv'
 RAW_FILENAME = SCRIPT_DIR / 'RecipeNLG_dataset.csv'
 
 # Columns to check for recipe validity
@@ -38,8 +38,27 @@ MIN_MATCH_RATIO = 1  # 100% of ingredients must match
 # Category requirements - recipe must have ingredients from at least N of these categories
 REQUIRED_CATEGORY_COUNT = 3  # Must have ingredients from at least 3 different flavor categories
 
-# Flavor categories (exclude actions and textures for balancing)
-FLAVOR_CATEGORIES = ['sweet', 'sour', 'umami', 'bitter', 'salty', 'spicy']
+# Categories to balance (exclude actions like heat_action, mech_action)
+# Also exclude protein, dairy, basics as they're too common and lead to baking dominance
+BALANCE_CATEGORIES = ['sweet', 'sour', 'umami', 'bitter', 'salty', 'fat', 'spicy', 'crunchy', 'creamy', 'starchy']
+
+# How many recipes per bucket (will be MAX_RECIPES / number of categories)
+RECIPES_PER_BUCKET = MAX_RECIPES // len(BALANCE_CATEGORIES) if MAX_RECIPES else 1000
+
+# Baking/dessert detection - limit these to prevent domination
+BAKING_KEYWORDS = [
+    'cake', 'cupcake', 'cookie', 'cookies', 'brownie', 'brownies', 'muffin', 'muffins',
+    'pie', 'tart', 'pastry', 'pastries', 'scone', 'scones', 'biscuit', 'biscuits',
+    'cheesecake', 'frosting', 'icing', 'fondant', 'fudge', 'truffle', 'truffles',
+    'pudding', 'custard', 'mousse', 'souffle', 'meringue', 'macaron', 'macaroon',
+    'donut', 'doughnut', 'croissant', 'danish', 'eclair', 'profiterole',
+    'bread pudding', 'cobbler', 'crisp', 'crumble', 'galette', 'strudel',
+    'bundt', 'pound cake', 'layer cake', 'sheet cake', 'loaf cake'
+]
+
+# Maximum percentage of recipes that can be baking/desserts
+MAX_BAKING_RATIO = 0.15  # Only 15% can be baking recipes
+MAX_BAKING_RECIPES = int(MAX_RECIPES * MAX_BAKING_RATIO)
 
 # ============================================================================
 # STRICT VALIDATION FILTER - Ingredient Categories
@@ -308,7 +327,7 @@ FILTER_DICT = {
 
     'basics': [
         'water', 'flour', 'all-purpose flour', 'baking powder', 'baking soda',
-        'yeast', 'cornstarch', 'bread crumbs', 'oats', 'sugar', 'salt', 'pepper',
+        'yeast', 'cornstarch', 'bread crumbs', 'oats', 'salt', 'pepper',
         # Flours & Meals
         'self-rising flour', 'cake flour', 'pastry flour', 'bread flour', 'whole wheat flour',
         'white whole wheat flour', 'spelt flour', 'rye flour', 'buckwheat flour',
@@ -320,37 +339,12 @@ FILTER_DICT = {
         'baking soda', 'bicarbonate of soda',
         'arrowroot powder', 'tapioca starch', 'potato starch', 'xanthan gum', 'guar gum',
         'psyllium husk', 'gelatin', 'agar agar', 'pectin',
-        # Sugars & Sweet Granules
-        'granulated sugar', 'white sugar', 'caster sugar', 'superfine sugar',
-        'brown sugar', 'dark brown sugar', 'light brown sugar', 'demerara sugar',
-        'turbinado sugar', 'raw sugar', 'muscovado sugar', 'coconut sugar',
-        'powdered sugar', 'confectioners sugar', 'icing sugar',
-        'sanding sugar', 'pearl sugar', 'rock sugar', 'candy sugar',
+        
         # Salts
         'table salt', 'iodized salt', 'kosher salt', 'coarse salt', 'fine sea salt',
         'flake salt', 'sel gris', 'fleur de sel', 'himalayan pink salt', 'black salt',
         'smoked salt', 'garlic salt', 'onion salt', 'celery salt', 'seasoned salt',
-        # Peppers & Basic Spices
-        'black peppercorns', 'ground black pepper', 'white pepper', 'green peppercorns',
-        'pink peppercorns', 'szechuan peppercorns', 'tellicherry pepper',
-        'cayenne pepper', 'crushed red pepper', 'red pepper flakes',
-        'paprika', 'smoked paprika', 'sweet paprika', 'hot paprika',
-        'garlic powder', 'onion powder', 'ground cumin', 'cumin seeds',
-        'chili powder', 'curry powder', 'italian seasoning', 'herbes de provence',
-        # Oils & Cooking Fats
-        'vegetable oil', 'canola oil', 'rapeseed oil', 'sunflower oil', 'safflower oil',
-        'corn oil', 'soybean oil', 'peanut oil', 'grapeseed oil',
-        'olive oil', 'extra virgin olive oil', 'light olive oil', 'pomace oil',
-        'coconut oil', 'avocado oil', 'sesame oil', 'toasted sesame oil',
-        'walnut oil', 'almond oil', 'hazelnut oil', 'pumpkin seed oil',
-        'lard', 'tallow', 'duck fat', 'schmaltz', 'shortening',
-        # Vinegars & Acidic Basics
-        'white vinegar', 'distilled vinegar', 'apple cider vinegar',
-        'red wine vinegar', 'white wine vinegar', 'champagne vinegar',
-        'balsamic vinegar', 'aged balsamic', 'balsamic glaze',
-        'rice vinegar', 'seasoned rice vinegar', 'black vinegar',
-        'malt vinegar', 'sherry vinegar', 'persimmon vinegar',
-        'lemon juice', 'lime juice', 'citric acid', 'sumac',
+
         # Liquid Bases
         'water', 'filtered water', 'mineral water', 'sparkling water',
         'club soda', 'soda water', 'tonic water',
@@ -360,8 +354,6 @@ FILTER_DICT = {
         # Pan Coatings & Binders
         'cooking spray', 'parchment paper', 'wax paper', 'aluminum foil',
         'butter wrapper', 'oil mister',
-        'breadcrumbs', 'panko breadcrumbs', 'italian breadcrumbs',
-        'crushed crackers', 'graham cracker crumbs', 'cookie crumbs'
     ]
 }
 
@@ -397,6 +389,12 @@ def get_recipe_categories(ner_list: list, category_lookup: dict) -> set:
     return categories
 
 
+def is_baking_recipe(title: str) -> bool:
+    """Check if a recipe is likely a baking/dessert recipe based on title."""
+    title_lower = title.lower()
+    return any(keyword in title_lower for keyword in BAKING_KEYWORDS)
+
+
 def validate_recipe(ner_list: list, directions: list, allowed_ingredients: set, category_lookup: dict) -> tuple[bool, float]:
     """
     Validate a recipe based on:
@@ -423,9 +421,9 @@ def validate_recipe(ner_list: list, directions: list, allowed_ingredients: set, 
     
     # Check flavor category diversity
     recipe_categories = get_recipe_categories(ner_list, category_lookup)
-    flavor_categories_present = recipe_categories.intersection(set(FLAVOR_CATEGORIES))
+    balance_categories_present = recipe_categories.intersection(set(BALANCE_CATEGORIES))
     
-    if len(flavor_categories_present) < REQUIRED_CATEGORY_COUNT:
+    if len(balance_categories_present) < REQUIRED_CATEGORY_COUNT:
         return False, match_ratio
     
     return True, match_ratio
@@ -434,7 +432,7 @@ def validate_recipe(ner_list: list, directions: list, allowed_ingredients: set, 
 def filter_recipes(input_path: Path, output_path: Path, limit_rows: int = None) -> int:
     """
     Filter recipes from the raw Kaggle CSV based on ingredient validation.
-    Limits output to MAX_RECIPES with balanced category distribution.
+    Uses bucket-based sampling to ensure balanced category distribution.
     
     Returns:
         Number of valid recipes found
@@ -443,24 +441,31 @@ def filter_recipes(input_path: Path, output_path: Path, limit_rows: int = None) 
     print(f"   Minimum ingredients: {MIN_INGREDIENTS}")
     print(f"   Minimum steps: {MIN_STEPS}")
     print(f"   Minimum match ratio: {MIN_MATCH_RATIO * 100}%")
-    print(f"   Required flavor categories: {REQUIRED_CATEGORY_COUNT}")
+    print(f"   Required categories: {REQUIRED_CATEGORY_COUNT}")
     print(f"   Max recipes: {MAX_RECIPES}")
+    print(f"   Recipes per bucket: {RECIPES_PER_BUCKET}")
+    print(f"   Balance categories: {BALANCE_CATEGORIES}")
     
     allowed_ingredients = build_allowed_ingredients()
     category_lookup = build_category_lookup()
     print(f"   Allowed ingredients in filter: {len(allowed_ingredients)}")
+    print(f"   Max baking recipes: {MAX_BAKING_RECIPES} ({MAX_BAKING_RATIO*100}%)")
     
-    all_valid_recipes = []
-    category_counts = {cat: 0 for cat in FLAVOR_CATEGORIES}
+    # Initialize buckets for each category
+    category_buckets = {cat: [] for cat in BALANCE_CATEGORIES}
+    baking_count = 0  # Track baking recipes to limit them
     
     chunk_size = 50000
     total_rows = limit_rows or LIMIT_ROWS
     
+    def all_buckets_full():
+        return all(len(bucket) >= RECIPES_PER_BUCKET for bucket in category_buckets.values())
+    
     with tqdm(total=total_rows, unit='rows', desc="Scanning") as pbar:
         for chunk in pd.read_csv(input_path, chunksize=chunk_size, on_bad_lines='skip', nrows=total_rows):
             for idx, row in chunk.iterrows():
-                # Stop if we have enough recipes
-                if len(all_valid_recipes) >= MAX_RECIPES:
+                # Stop if all buckets are full
+                if all_buckets_full():
                     break
                     
                 try:
@@ -469,25 +474,60 @@ def filter_recipes(input_path: Path, output_path: Path, limit_rows: int = None) 
                     is_valid, match_ratio = validate_recipe(ner_list, directions, allowed_ingredients, category_lookup)
                     
                     if is_valid:
-                        # Get primary category for balancing
+                        # Check if this is a baking recipe
+                        title = str(row.get('title', ''))
+                        is_baking = is_baking_recipe(title)
+                        
+                        # Skip baking recipes if we've hit the limit
+                        if is_baking and baking_count >= MAX_BAKING_RECIPES:
+                            continue
+                        
+                        # Get categories this recipe belongs to
                         recipe_cats = get_recipe_categories(ner_list, category_lookup)
-                        flavor_cats = recipe_cats.intersection(set(FLAVOR_CATEGORIES))
+                        balance_cats = recipe_cats.intersection(set(BALANCE_CATEGORIES))
                         
-                        # Find the least represented category this recipe belongs to
-                        if flavor_cats:
-                            min_cat = min(flavor_cats, key=lambda c: category_counts.get(c, 0))
-                            category_counts[min_cat] += 1
-                        
-                        all_valid_recipes.append(row)
+                        if balance_cats:
+                            # Deprioritize 'sweet' - only use it if no other option
+                            non_sweet_cats = balance_cats - {'sweet'}
+                            preferred_cats = non_sweet_cats if non_sweet_cats else balance_cats
+                            
+                            # Find the bucket with the fewest recipes that this recipe qualifies for
+                            eligible_buckets = [(cat, len(category_buckets[cat])) 
+                                               for cat in preferred_cats 
+                                               if len(category_buckets[cat]) < RECIPES_PER_BUCKET]
+                            
+                            # If no preferred buckets available, try sweet as fallback
+                            if not eligible_buckets and 'sweet' in balance_cats:
+                                if len(category_buckets['sweet']) < RECIPES_PER_BUCKET:
+                                    eligible_buckets = [('sweet', len(category_buckets['sweet']))]
+                            
+                            if eligible_buckets:
+                                # Add to the least-filled eligible bucket
+                                min_cat = min(eligible_buckets, key=lambda x: x[1])[0]
+                                category_buckets[min_cat].append(row)
+                                
+                                if is_baking:
+                                    baking_count += 1
                         
                 except (ValueError, SyntaxError):
                     continue
             
             pbar.update(len(chunk))
             
-            if len(all_valid_recipes) >= MAX_RECIPES:
-                print(f"\n   Reached {MAX_RECIPES} recipes, stopping...")
+            if all_buckets_full():
+                print(f"\n   All buckets filled with {RECIPES_PER_BUCKET} recipes each!")
                 break
+    
+    # Print bucket sizes
+    print("\n📊 Bucket sizes before consolidation:")
+    for cat in BALANCE_CATEGORIES:
+        print(f"   {cat}: {len(category_buckets[cat])}")
+    print(f"   (baking recipes: {baking_count}/{MAX_BAKING_RECIPES})")
+    
+    # Combine all buckets into final list
+    all_valid_recipes = []
+    for cat in BALANCE_CATEGORIES:
+        all_valid_recipes.extend(category_buckets[cat])
     
     # Create final DataFrame and remove duplicates
     print("\n📊 Consolidating results...")
@@ -501,10 +541,10 @@ def filter_recipes(input_path: Path, output_path: Path, limit_rows: int = None) 
     final_df.to_csv(output_path, index=False)
     print(f"✅ Saved {len(final_df)} unique valid recipes to: {output_path.name}")
     
-    # Print category distribution
-    print("\n📊 Category distribution in final dataset:")
-    for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
-        print(f"   {cat}: {count}")
+    # Print final category distribution
+    print("\n📊 Final category distribution:")
+    for cat, bucket in sorted(category_buckets.items(), key=lambda x: -len(x[1])):
+        print(f"   {cat}: {len(bucket)}")
     
     return len(final_df)
 

@@ -25,7 +25,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Target table
-TABLE_NAME = "recipes"
+TABLE_NAME = "recipes_duplicate_GNN2"
 
 
 def get_supabase_client() -> Client:

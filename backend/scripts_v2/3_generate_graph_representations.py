@@ -20,7 +20,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Target table
-TABLE_NAME = "recipes"
+TABLE_NAME = "recipes_duplicate"
 
 # Rate limiting settings
 OPENAI_REQUESTS_PER_MINUTE = 60  # Adjust based on your tier
