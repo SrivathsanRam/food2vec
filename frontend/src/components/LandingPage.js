@@ -161,13 +161,13 @@ const LandingPage = () => {
   };
 
   const handleSubmit = async () => {
-    if (!recipeName.trim() || !recipeSteps.trim()) {
-      setCreateStatus('error');
-      return;
-    }
+    const nameToSubmit = recipeName;
+    const stepsToSubmit = recipeSteps;
 
-    setIsCreating(true);
-    setCreateStatus(null);
+    setRecipeName("");
+    setRecipeSteps("");
+    handleModalClose();
+    setIsLoading(true);
 
     try {
       const response = await fetch("http://localhost:5000/api/recipe", {
@@ -249,7 +249,7 @@ const LandingPage = () => {
         <SearchBar onSearch={handleSearch} />
 
         <br />
-        <SliderComponent nNearest={kValue} setKValue={setKValue} />
+        <SliderComponent kValue={kValue} setKValue={setKValue} />
 
         <br />
         <Stack alignItems="center" gap={2}>

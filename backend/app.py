@@ -10,11 +10,15 @@ import torch.nn.functional as F
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from openapi import *
+import bcrypt
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# bcrypt config
+SALT = os.getenv("SALT").encode('utf-8')
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -723,7 +727,7 @@ def get_random_recipes():
 
 
 @app.route('/api/recipe/create', methods=['POST'])
-def create_recipe():
+def create_recipe_1():
     """Create a new recipe with GNN embedding."""
     data = request.get_json()
     
@@ -923,6 +927,174 @@ def create_recipe_from_steps():
     except Exception as e:
         print(f"Create recipe error: {e}")
         return jsonify({"error": str(e)}), 500
+
+def hash_password(password):
+    """
+    Hash a password using bcrypt.
+    
+    Args:
+        password (str): Plain text password
+    
+    Returns:
+        str: Hashed password
+    """
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+
+def verify_password(plain_password, hashed_password):
+    """
+    Verify a password against its hash.
+    
+    Args:
+        plain_password (str): Plain text password
+        hashed_password (str): Stored hashed password
+    
+    Returns:
+        bool: True if password matches, False otherwise
+    """
+    return bcrypt.checkpw(
+        plain_password.encode('utf-8'),
+        hashed_password.encode('utf-8')
+    )
+
+
+@app.route('/auth/signup', methods=['POST'])
+def signup():
+    """Register a new user account."""
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        
+        # Validate input
+        if not username:
+            return jsonify({"error": "Username is required"}), 400
+        
+        if not password:
+            return jsonify({"error": "Password is required"}), 400
+        
+        if len(password) < 8:
+            return jsonify({"error": "Password must be at least 8 characters"}), 400
+        
+        # Get Supabase client
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Check if username already exists
+        existing_user = supabase.table("users") \
+            .select("username") \
+            .eq("username", username) \
+            .execute()
+        
+        if existing_user.data and len(existing_user.data) > 0:
+            return jsonify({"error": "Username already exists"}), 409
+        
+        # Hash the password
+        password_hash = hash_password(password)
+        
+        # Create user data
+        user_data = {
+            "username": username,
+            "password_hash": password_hash
+        }
+        
+        # Insert into database
+        result = supabase.table("users").insert(user_data).execute()
+        
+        if not result.data:
+            return jsonify({"error": "Failed to create user"}), 500
+        
+        print(f"User created successfully: {username}")
+        
+        return jsonify({
+            "message": "User created successfully",
+            "username": username
+        }), 201
+        
+    except Exception as e:
+        print(f"Signup error: {e}")
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
+
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    """Log in to user account."""
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        
+        # Validate input
+        if not username or not password:
+            return jsonify({"error": "Username and password are required"}), 400
+        
+        # Get Supabase client
+        supabase = get_supabase_client()
+        if not supabase:
+            return jsonify({"error": "Database connection failed"}), 500
+        
+        # Get user from database
+        result = supabase.table("users") \
+            .select("username, password_hash") \
+            .eq("username", username) \
+            .execute()
+        
+        # Check if user exists
+        if not result.data or len(result.data) == 0:
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        # Get stored password hash
+        user = result.data[0]
+        stored_hash = user['password_hash']
+        
+        # Verify password
+        if verify_password(password, stored_hash):
+            print(f"Login successful: {username}")
+            return jsonify({
+                "message": "Login successful",
+                "username": username
+            }), 200
+        else:
+            print(f"Login failed: {username} (incorrect password)")
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({"error": f"Login failed: {str(e)}"}), 500
+
+@app.route('/auth/logout', methods=['POST'])
+def logout():
+    """Log out user (client-side should clear session/token)."""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip() if data else None
+        
+        # In a stateless API, logout is primarily client-side
+        # Server can log the event or invalidate tokens if using JWT
+        
+        if username:
+            print(f"Logout: {username}")
+            return jsonify({
+                "message": "Logged out successfully",
+                "username": username
+            }), 200
+        else:
+            return jsonify({"message": "Logged out successfully"}), 200
+        
+    except Exception as e:
+        print(f"Logout error: {e}")
+        return jsonify({"error": f"Logout failed: {str(e)}"}), 500
 
 
 if __name__ == '__main__':        

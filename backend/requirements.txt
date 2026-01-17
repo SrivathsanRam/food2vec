@@ -6,3 +6,6 @@ numpy==1.26.4
 websockets>=14,<16
 google-genai==1.54.0
 openai==2.15.0
+torch==2.9.1
+sentence-transformers==5.2.0
+torch-geometric==2.7.0
