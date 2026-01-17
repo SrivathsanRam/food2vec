@@ -82,3 +82,16 @@ def extract_ingredients(steps):
         return ingredients
     
     return []
+
+
+def generate_recipe_steps(recipe_name):
+    """Generate recipe steps from a recipe name using AI."""
+    response = openai_query(
+        "You are a professional chef. Given a recipe name, generate detailed cooking instructions. "
+        "Return ONLY the step-by-step cooking instructions as a single paragraph. "
+        "Include specific ingredients with measurements and detailed cooking techniques. "
+        "Make it realistic and delicious.",
+        f"Generate detailed cooking steps for: {recipe_name}"
+    )
+    text_content = response.output[0].content[0].text
+    return text_content.strip()

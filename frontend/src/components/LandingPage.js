@@ -12,6 +12,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import TextField from "@mui/material/TextField";
 import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
+import CircularProgress from "@mui/material/CircularProgress";
 
 // Modern, improved modal style with smooth animations and better UI
 const style = {
@@ -105,6 +106,7 @@ const LandingPage = () => {
   const [recipeName, setRecipeName] = useState("");
   const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Update displayed results when kValue changes
   useEffect(() => {
@@ -193,6 +195,40 @@ const LandingPage = () => {
     setIsSnackbarOpen(false);
   };
 
+  const handleGenerateRecipe = async () => {
+    if (!recipeName.trim()) {
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Please enter a recipe name first.");
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch("http://localhost:5000/api/recipe/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: recipeName }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate recipe");
+      }
+
+      const data = await response.json();
+      setRecipeSteps(data.steps || "");
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Recipe steps generated!");
+    } catch (error) {
+      console.error("Generate recipe error:", error);
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Failed to generate recipe.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   return (
     <div className="landing-page">
       <div className="hero-section">
@@ -237,14 +273,25 @@ const LandingPage = () => {
                 autoFocus
               />
 
+              <Button
+                onClick={handleGenerateRecipe}
+                variant="outlined"
+                color="secondary"
+                disabled={isGenerating || !recipeName.trim()}
+                sx={{ mb: 2, textTransform: "none" }}
+                startIcon={isGenerating ? <CircularProgress size={16} /> : null}
+              >
+                {isGenerating ? "Generating..." : "✨ AI Generate Steps"}
+              </Button>
+
               <TextField
                 label="Recipe steps"
                 variant="outlined"
                 value={recipeSteps}
                 onChange={(e) => setRecipeSteps(e.target.value)}
-                placeholder="Enter recipe steps..."
+                placeholder="Enter recipe steps or use AI generate..."
                 multiline
-                rows={4}
+                rows={6}
                 sx={textInputStyle}
               />
             </Box>

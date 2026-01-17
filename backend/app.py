@@ -784,6 +784,27 @@ def search_similar_recipes():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/recipe/generate', methods=['POST'])
+def generate_recipe():
+    """Generate recipe steps from a recipe name using AI."""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    
+    if not name:
+        return jsonify({"error": "Recipe name is required"}), 400
+    
+    try:
+        steps = generate_recipe_steps(name)
+        return jsonify({
+            "name": name,
+            "steps": steps,
+            "message": "Recipe steps generated successfully"
+        })
+    except Exception as e:
+        print(f"Generate recipe error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # ============== Startup ==============
 
 # Load models when app starts
