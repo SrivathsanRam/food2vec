@@ -5,4 +5,4 @@ supabase>=2.27.0
 numpy==1.26.4
 websockets>=14,<16
 google-genai==1.54.0
-openai==0.27.8
+openai==2.15.0
