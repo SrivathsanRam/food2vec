@@ -59,11 +59,11 @@ HacknRoll/
    pip install -r requirements.txt
    ```
 
-5. Copy the environment file and add your Pinecone API key:
+5. Copy the environment file and add your Supabase conne key:
    ```bash
    copy .env.example .env
    ```
-   Edit `.env` with your Pinecone credentials.
+   Edit `.env` with your Supbase credentials.
 
 6. Run the Flask server:
    ```bash
@@ -85,7 +85,7 @@ HacknRoll/
 
 3. Start the development server:
    ```bash
-   npm start
+   npm run dev
    ```
    The frontend will run on http://localhost:3000
 

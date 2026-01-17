@@ -40,7 +40,7 @@ const LandingPage = () => {
           <span className="logo-icon">🍕</span>
           <h1 className="logo-text">Food2Vec</h1>
         </div>
-        <p className="tagline">Discover similar foods using AI-powered vector search</p>
+        <p className="tagline">Discover recipes using AI-powered vector search</p>
         
         <SearchBar onSearch={handleSearch} />
         
@@ -54,8 +54,8 @@ const LandingPage = () => {
             <span>AI Powered</span>
           </div>
           <div className="feature">
-            <span className="feature-icon">⚡</span>
-            <span>Instant Results</span>
+            <span className="feature-icon">🔗</span>
+            <span>Recipe Flow</span>
           </div>
         </div>
       </div>
@@ -64,7 +64,9 @@ const LandingPage = () => {
         <SearchResults results={searchResults} isLoading={isLoading} />
       )}
 
-      
+      <footer className="footer">
+        <p>Powered by Supabase + pgvector + React Flow</p>
+      </footer>
     </div>
   );
 };
