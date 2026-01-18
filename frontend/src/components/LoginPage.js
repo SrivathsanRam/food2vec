@@ -18,6 +18,8 @@ import { Visibility, VisibilityOff, Lock, Person, Restaurant } from "@mui/icons-
 import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
 
+const baseURL = process.env.REACT_APP_API_BASE_URL;
+
 export default function LoginPage() {
     const navigate = useNavigate();
     const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
@@ -80,7 +82,7 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch("http://localhost:5000/auth/login", {
+            const response = await fetch(`${baseURL}/auth/login`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -95,7 +97,7 @@ export default function LoginPage() {
                 setIsSnackbarOpen(true);
                 setSnackbarMessage("Error logging in");
             } else {
-                // Store user info in cookies
+                // Store user info in cookies (expires in 1 day)
                 Cookies.set("username", formData.name, { expires: 1 });
                 Cookies.set("isLoggedIn", "true", { expires: 1 });
 
