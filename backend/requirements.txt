@@ -10,3 +10,4 @@ torch==2.9.1
 sentence-transformers==5.2.0
 torch-geometric==2.7.0
 bcrypt==5.0.0
+gunicorn==20.0.4
