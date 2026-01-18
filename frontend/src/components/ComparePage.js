@@ -18,6 +18,8 @@ import { ArrowBack, Compare, Search, ContentCopy, Check } from "@mui/icons-mater
 import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
 
+const baseURL = process.env.REACT_APP_API_BASE_URL;
+
 export default function ComparePage() {
     const navigate = useNavigate();
     const [myPalateCode, setMyPalateCode] = useState("");
@@ -37,22 +39,20 @@ export default function ComparePage() {
             navigate("/login");
             return;
         }
-        fetchMyPalate();
-    }, [navigate]);
-
-    const fetchMyPalate = async () => {
-        try {
-            const response = await fetch(
-                `http://localhost:5000/api/palate/check?username=${encodeURIComponent(username)}`
-            );
-            const data = await response.json();
-            if (data.palate_code) {
-                setMyPalateCode(data.palate_code);
+        const fetchMyPalate = async () => {
+            try {
+                const response = await fetch(`${baseURL}/api/palate/check?username=${encodeURIComponent(username)}`);
+                const data = await response.json();
+                if (data.palate_code) {
+                    setMyPalateCode(data.palate_code);
+                }
+            } catch (error) {
+                console.error("Error fetching palate:", error);
             }
-        } catch (error) {
-            console.error("Error fetching palate:", error);
-        }
-    };
+        };
+
+        fetchMyPalate();
+    }, [navigate, username]);
 
     const handleCopyCode = () => {
         navigator.clipboard.writeText(myPalateCode);
@@ -71,7 +71,7 @@ export default function ComparePage() {
         setComparisonResult(null);
 
         try {
-            const response = await fetch("http://localhost:5000/api/palate/compare", {
+            const response = await fetch(`${baseURL}/api/palate/compare`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -104,7 +104,7 @@ export default function ComparePage() {
         setIntersectionRecipes([]);
 
         try {
-            const response = await fetch("http://localhost:5000/api/palate/intersection", {
+            const response = await fetch(`${baseURL}/api/palate/intersection`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -159,11 +159,7 @@ export default function ComparePage() {
                         >
                             {myPalateCode || "Loading..."}
                         </Typography>
-                        <IconButton
-                            onClick={handleCopyCode}
-                            size="small"
-                            color={copied ? "success" : "default"}
-                        >
+                        <IconButton onClick={handleCopyCode} size="small" color={copied ? "success" : "default"}>
                             {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
                         </IconButton>
                     </Box>
@@ -279,11 +275,7 @@ export default function ComparePage() {
                 )}
             </Container>
 
-            <Snackbar
-                open={snackbarOpen}
-                autoHideDuration={3000}
-                onClose={() => setSnackbarOpen(false)}
-            >
+            <Snackbar open={snackbarOpen} autoHideDuration={3000} onClose={() => setSnackbarOpen(false)}>
                 <Alert severity="error" onClose={() => setSnackbarOpen(false)}>
                     {snackbarMessage}
                 </Alert>

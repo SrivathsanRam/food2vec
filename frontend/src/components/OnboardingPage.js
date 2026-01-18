@@ -19,9 +19,11 @@ import { ContentCopy, Check, Upload } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
 
+const baseURL = process.env.REACT_APP_API_BASE_URL;
+
 // Dishes from the recipe database for rating
 const ONBOARDING_DISHES = [
-    { id: 1, name: "\"Refried\" Beans", category: "Beans" },
+    { id: 1, name: '"Refried" Beans', category: "Beans" },
     { id: 2, name: "3 Bean Salad", category: "Salad" },
     { id: 3, name: "20 minute seared strip steak with sweet-and-sour carrots", category: "Meat" },
     { id: 4, name: "Almond Shortbread", category: "Cookies" },
@@ -30,7 +32,7 @@ const ONBOARDING_DISHES = [
     { id: 7, name: "1950'S Potato Chip Cookies", category: "Cookies" },
     { id: 8, name: "(Web Exclusive) Round 2 Recipe: Edamame with Pasta", category: "Pasta" },
     { id: 9, name: "*Sweet And Sour Carrots", category: "Vegetables" },
-    { id: 10, name: "\"Pecan Pie\" Acorn Squash", category: "Vegetables" },
+    { id: 10, name: '"Pecan Pie" Acorn Squash', category: "Vegetables" },
 ];
 
 export default function OnboardingPage() {
@@ -78,13 +80,13 @@ export default function OnboardingPage() {
         handleNext();
     };
 
-    const progress = ((Object.keys(ratings).length) / ONBOARDING_DISHES.length) * 100;
+    const progress = (Object.keys(ratings).length / ONBOARDING_DISHES.length) * 100;
 
     const handleSubmit = async () => {
         setIsSubmitting(true);
 
         try {
-            const response = await fetch("http://localhost:5000/api/palate/create", {
+            const response = await fetch(`${baseURL}/api/palate/create`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -92,7 +94,7 @@ export default function OnboardingPage() {
                 body: JSON.stringify({
                     username: username,
                     ratings: ratings,
-                    dishes: ONBOARDING_DISHES.map(d => ({ id: d.id, name: d.name, category: d.category })),
+                    dishes: ONBOARDING_DISHES.map((d) => ({ id: d.id, name: d.name, category: d.category })),
                 }),
             });
 
@@ -131,7 +133,7 @@ export default function OnboardingPage() {
         setIsSubmitting(true);
 
         try {
-            const response = await fetch("http://localhost:5000/api/palate/import", {
+            const response = await fetch(`${baseURL}/api/palate/import`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -146,7 +148,6 @@ export default function OnboardingPage() {
                 throw new Error("Invalid palate code");
             }
 
-            const data = await response.json();
             setPalateCode(importCode.trim());
             setShowResult(true);
             Cookies.set("isOnboarded", "true", { expires: 365 });
@@ -207,11 +208,7 @@ export default function OnboardingPage() {
                                 borderRadius: 1,
                             }}
                         >
-                            <Typography
-                                variant="body1"
-                                fontFamily="monospace"
-                                sx={{ wordBreak: "break-all" }}
-                            >
+                            <Typography variant="body1" fontFamily="monospace" sx={{ wordBreak: "break-all" }}>
                                 {palateCode}
                             </Typography>
                             <IconButton
@@ -272,10 +269,10 @@ export default function OnboardingPage() {
                             {Math.round(progress)}%
                         </Typography>
                     </Box>
-                    <LinearProgress 
-                        variant="determinate" 
-                        value={progress} 
-                        sx={{ height: 4, borderRadius: 2, backgroundColor: "#e0e0e0" }} 
+                    <LinearProgress
+                        variant="determinate"
+                        value={progress}
+                        sx={{ height: 4, borderRadius: 2, backgroundColor: "#e0e0e0" }}
                     />
                 </Box>
 
@@ -336,12 +333,7 @@ export default function OnboardingPage() {
                             <Typography variant="h6" fontWeight="500" gutterBottom>
                                 {currentDish.name}
                             </Typography>
-                            <Chip
-                                label={currentDish.category}
-                                size="small"
-                                variant="outlined"
-                                sx={{ mb: 2 }}
-                            />
+                            <Chip label={currentDish.category} size="small" variant="outlined" sx={{ mb: 2 }} />
 
                             <Box sx={{ mb: 2 }}>
                                 <Rating
@@ -366,11 +358,7 @@ export default function OnboardingPage() {
                                 </Typography>
                                 {currentIndex < ONBOARDING_DISHES.length - 1 ? (
                                     <Box>
-                                        <Button
-                                            size="small"
-                                            onClick={handleSkip}
-                                            sx={{ textTransform: "none", mr: 1 }}
-                                        >
+                                        <Button size="small" onClick={handleSkip} sx={{ textTransform: "none", mr: 1 }}>
                                             Skip
                                         </Button>
                                         <Button
@@ -392,11 +380,7 @@ export default function OnboardingPage() {
                                         disableElevation
                                         sx={{ textTransform: "none" }}
                                     >
-                                        {isSubmitting ? (
-                                            <CircularProgress size={16} color="inherit" />
-                                        ) : (
-                                            "Done"
-                                        )}
+                                        {isSubmitting ? <CircularProgress size={16} color="inherit" /> : "Done"}
                                     </Button>
                                 )}
                             </Box>
@@ -416,7 +400,7 @@ export default function OnboardingPage() {
                                         onClick={() => setCurrentIndex(idx)}
                                         variant={currentIndex === idx ? "filled" : "outlined"}
                                         color={ratings[dish.id] ? "primary" : "default"}
-                                        sx={{ 
+                                        sx={{
                                             cursor: "pointer",
                                             minWidth: 32,
                                         }}
@@ -438,11 +422,7 @@ export default function OnboardingPage() {
                 )}
             </Container>
 
-            <Snackbar
-                open={snackbarOpen}
-                autoHideDuration={3000}
-                onClose={() => setSnackbarOpen(false)}
-            >
+            <Snackbar open={snackbarOpen} autoHideDuration={3000} onClose={() => setSnackbarOpen(false)}>
                 <Alert
                     onClose={() => setSnackbarOpen(false)}
                     severity={snackbarMessage.includes("success") ? "success" : "error"}
