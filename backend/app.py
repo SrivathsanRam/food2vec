@@ -1575,23 +1575,61 @@ def find_palate_intersection():
         # Query recipes that match common liked categories
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         
-        # Build query for common categories
+        # Get palate embeddings for similarity calculation
+        emb1 = palate1.get("e", [])
+        emb2 = palate2.get("e", [])
+        
+        # Compute combined palate embedding (average of both)
+        combined_embedding = None
+        if emb1 and emb2:
+            combined_embedding = [(a + b) / 2 for a, b in zip(emb1, emb2)]
+        elif emb1:
+            combined_embedding = emb1
+        elif emb2:
+            combined_embedding = emb2
+        
+        # Fetch recipes with embeddings to compute actual similarity
         recipes = []
-        for category in common_liked[:3]:  # Limit to top 3 categories
-            response = supabase.table(TABLE_NAME)\
-                .select("name, ingredients, ner")\
-                .ilike("ner", f"%{category}%")\
-                .limit(limit // len(common_liked[:3]) + 1)\
-                .execute()
-            
-            if response.data:
-                for r in response.data:
-                    if r not in recipes:
-                        recipes.append({
-                            "name": r.get("name", "Unknown"),
-                            "ingredients": r.get("ingredients", ""),
-                            "matched_category": category
-                        })
+        response = supabase.table(TABLE_NAME)\
+            .select("name, embedding, ner")\
+            .not_.is_("embedding", "null")\
+            .limit(100)\
+            .execute()
+        
+        if response.data:
+            for r in response.data:
+                recipe_embedding = r.get("embedding")
+                if recipe_embedding:
+                    if isinstance(recipe_embedding, str):
+                        recipe_embedding = json.loads(recipe_embedding)
+                    
+                    # Calculate similarity score
+                    if combined_embedding and recipe_embedding:
+                        # Truncate recipe embedding to match palate embedding size (64 dims)
+                        recipe_emb_truncated = recipe_embedding[:len(combined_embedding)]
+                        score = cosine_similarity(combined_embedding, recipe_emb_truncated)
+                        score = max(0, min(1, score))  # Clamp to [0,1]
+                    else:
+                        score = 0.5  # Default if no embeddings
+                    
+                    # Determine category from NER if available
+                    ner = r.get("ner", [])
+                    category = "Recipe"
+                    if ner:
+                        # Check if any common_liked category appears in ingredients
+                        for cat in common_liked:
+                            if any(cat.lower() in str(ing).lower() for ing in ner):
+                                category = cat
+                                break
+                    
+                    recipes.append({
+                        "name": r.get("name", "Unknown"),
+                        "category": category,
+                        "score": score
+                    })
+        
+        # Sort by similarity score (highest first) and limit
+        recipes.sort(key=lambda x: x["score"], reverse=True)
         
         # Remove duplicates and limit
         seen = set()
@@ -1599,9 +1637,27 @@ def find_palate_intersection():
         for r in recipes:
             if r["name"] not in seen:
                 seen.add(r["name"])
-                unique_recipes.append(r)
+                unique_recipes.append({
+                    "name": r["name"],
+                    "category": r.get("category", "Recipe"),
+                    "score": round(r.get("score", 0.5), 3)
+                })
                 if len(unique_recipes) >= limit:
                     break
+        
+        # If no exact name matches, get random recipes as fallback
+        if not unique_recipes:
+            response = supabase.table(TABLE_NAME)\
+                .select("name")\
+                .limit(limit)\
+                .execute()
+            if response.data:
+                for r in response.data:
+                    unique_recipes.append({
+                        "name": r.get("name", "Unknown"),
+                        "category": "Recommended",
+                        "score": 0.7
+                    })
         
         return jsonify({
             "recipes": unique_recipes,
