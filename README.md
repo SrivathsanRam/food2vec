@@ -41,11 +41,13 @@ HacknRoll/
 ### Backend Setup
 
 1. Navigate to the backend directory:
+
    ```bash
    cd backend
    ```
 
 2. Create a virtual environment:
+
    ```bash
    python -m venv venv
    ```
@@ -55,30 +57,43 @@ HacknRoll/
    - Mac/Linux: `source venv/bin/activate`
 
 4. Install dependencies:
+
    ```bash
    pip install -r requirements.txt
    ```
 
-5. Copy the environment file and add your Supabase conne key:
+5. Add the environment file and add your Supabase conn key:
+
    ```bash
-   copy .env.example .env
+   SUPABASE_URL=URL
+   SUPABASE_KEY=KEY
+
+   FLASK_ENV=development
+   FLASK_DEBUG=1
+
+   OPENAI_API_KEY=KEY
    ```
-   Edit `.env` with your Supbase credentials.
+
+Edit `.env` with your Supbase credentials.
 
 6. Run the Flask server:
-   ```bash
-   python app.py
-   ```
-   The backend will run on http://localhost:5000
+
+```bash
+python app.py
+```
+
+The backend will run on http://localhost:5000
 
 ### Frontend Setup
 
 1. Navigate to the frontend directory:
+
    ```bash
    cd frontend
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
@@ -91,26 +106,32 @@ HacknRoll/
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health` | GET | Health check |
-| `/api/autocomplete?q=<query>` | GET | Get food suggestions |
-| `/api/search` | POST | Search for similar foods |
-| `/api/categories` | GET | Get all food categories |
+| Endpoint                      | Method | Description              |
+| ----------------------------- | ------ | ------------------------ |
+| `/api/health`                 | GET    | Health check             |
+| `/api/autocomplete?q=<query>` | GET    | Get food suggestions     |
+| `/api/search`                 | POST   | Search for similar foods |
+| `/api/categories`             | GET    | Get all food categories  |
 
-## Pinecone Setup (Optional)
+## Supabase Setup (Optional)
 
 To enable real vector search:
 
-1. Create a Pinecone account at https://www.pinecone.io/
-2. Create an index named `food-vectors`
-3. Add your API key to the `.env` file
-4. Populate the index with food embeddings
+1. Create a Supabase account at https://supabase.com/
+2. Create a new project
+3. Enable the `pgvector` extension in your database (Database → Extensions → enable `vector`)
+4. Create a table for food vectors
+5. Add your Supabase URL and key to the `.env` file:
 
-Without Pinecone configuration, the app uses mock data for demonstration.
+```
+   SUPABASE_URL=your_project_url
+   SUPABASE__KEY=your_anon_key
+```
+
+6.  Populate the table with food embeddings
 
 ## Technologies Used
 
-- **Backend**: Flask, Flask-CORS, Pinecone
+- **Backend**: Flask, Flask-CORS, Supabase
 - **Frontend**: React, CSS3
 - **Vector Database**: Pinecone
