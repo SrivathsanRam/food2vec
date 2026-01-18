@@ -63,6 +63,19 @@ export default function LoginPage() {
         return Object.keys(newErrors).length === 0;
     };
 
+    const checkOnboardingStatus = async (username) => {
+        try {
+            const response = await fetch(
+                `http://localhost:5000/api/palate/check?username=${encodeURIComponent(username)}`
+            );
+            const data = await response.json();
+            return data.is_onboarded;
+        } catch (error) {
+            console.error("Check onboarding error:", error);
+            return false;
+        }
+    };
+
     const handleSubmit = async () => {
         if (!validateForm()) return;
 
@@ -88,11 +101,19 @@ export default function LoginPage() {
                 Cookies.set("username", formData.name, { expires: 1 });
                 Cookies.set("isLoggedIn", "true", { expires: 1 });
 
+                // Check if user has been onboarded
+                const isOnboarded = await checkOnboardingStatus(formData.name);
+
                 setSnackbarMessage("Login successful!");
                 setIsSnackbarOpen(true);
 
                 setTimeout(() => {
-                    navigate("/recipes");
+                    if (isOnboarded) {
+                        Cookies.set("isOnboarded", "true", { expires: 365 });
+                        navigate("/recipes");
+                    } else {
+                        navigate("/onboarding");
+                    }
                 }, 500);
             }
         } catch (error) {

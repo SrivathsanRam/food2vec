@@ -15,6 +15,16 @@ import Snackbar from "@mui/material/Snackbar";
 import Stack from "@mui/material/Stack";
 import CircularProgress from "@mui/material/CircularProgress";
 import Alert from "@mui/material/Alert";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Divider from "@mui/material/Divider";
+import Avatar from "@mui/material/Avatar";
+import PersonIcon from "@mui/icons-material/Person";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import LogoutIcon from "@mui/icons-material/Logout";
+import CompareIcon from "@mui/icons-material/Compare";
+import { useNavigate } from "react-router-dom";
+import Cookies from "js-cookie";
 
 // Modern, improved modal style with smooth animations and better UI
 const style = {
@@ -100,262 +110,283 @@ const textInputStyle = {
 const baseURL = process.env.REACT_APP_API_BASE_URL;
 
 const LandingPage = () => {
-    const [allResults, setAllResults] = useState([]); // Store all 10 results
-    const [searchResults, setSearchResults] = useState([]); // Filtered results based on kValue
-    const [kValue, setKValue] = useState(5);
-    const [isLoading, setIsLoading] = useState(false);
-    const [hasSearched, setHasSearched] = useState(false);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [recipeSteps, setRecipeSteps] = useState("");
-    const [recipeName, setRecipeName] = useState("");
-    const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
-    const [snackbarMessage, setSnackbarMessage] = useState("");
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [isCreating, setIsCreating] = useState(false);
-    const [createStatus, setCreateStatus] = useState(null); // null, 'success', 'error'
+  const navigate = useNavigate();
+  const [allResults, setAllResults] = useState([]); // Store all 10 results
+  const [searchResults, setSearchResults] = useState([]); // Filtered results based on kValue
+  const [kValue, setKValue] = useState(5);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [recipeSteps, setRecipeSteps] = useState("");
+  const [recipeName, setRecipeName] = useState("");
+  const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createStatus, setCreateStatus] = useState(null); // null, 'success', 'error'
+  
+  // Profile menu state
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [palateCode, setPalateCode] = useState("");
+  const [codeCopied, setCodeCopied] = useState(false);
+  const username = Cookies.get("username") || "User";
+  const profileMenuOpen = Boolean(anchorEl);
 
-    // Update displayed results when kValue changes
-    useEffect(() => {
-        if (allResults.length > 0) {
-            setSearchResults(allResults.slice(0, kValue));
+  // Update displayed results when kValue changes
+  useEffect(() => {
+    if (allResults.length > 0) {
+      setSearchResults(allResults.slice(0, kValue));
+    }
+  }, [kValue, allResults]);
+
+  // Fetch palate code on mount
+  useEffect(() => {
+    const fetchPalate = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/palate/check?username=${encodeURIComponent(username)}`
+        );
+        const data = await response.json();
+        if (data.palate_code) {
+          setPalateCode(data.palate_code);
         }
-    }, [kValue, allResults]);
-
-    const handleSearch = async (query) => {
-        if (!query.trim()) return;
-
-        setIsLoading(true);
-        setHasSearched(true);
-
-        try {
-            // Always fetch top 10, filter in frontend
-            const response = await fetch(`${baseURL}/api/search`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ query, top_k: 10 }),
-            });
-
-            const data = await response.json();
-            const results = data.results || [];
-            setAllResults(results); // Store all results
-            setSearchResults(results.slice(0, kValue)); // Display filtered results
-        } catch (error) {
-            console.error("Search error:", error);
-            setAllResults([]);
-            setSearchResults([]);
-        } finally {
-            setIsLoading(false);
-        }
+      } catch (error) {
+        console.error("Error fetching palate:", error);
+      }
     };
+    if (username) fetchPalate();
+  }, [username]);
 
-    const handleModalOpen = () => {
-        setIsModalOpen(true);
-    };
+  const handleProfileClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
 
-    const handleModalClose = () => {
-        if (isCreating) return; // Don't allow closing while creating
-        setIsModalOpen(false);
-        setRecipeName("");
-        setRecipeSteps("");
-        setCreateStatus(null);
-    };
+  const handleProfileClose = () => {
+    setAnchorEl(null);
+  };
 
-    const handleSubmit = async () => {
-        const nameToSubmit = recipeName;
-        const stepsToSubmit = recipeSteps;
+  const handleCopyPalateCode = () => {
+    navigator.clipboard.writeText(palateCode);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+    setSnackbarMessage("Palate code copied!");
+    setIsSnackbarOpen(true);
+  };
 
-        setRecipeName("");
-        setRecipeSteps("");
-        handleModalClose();
-        setIsLoading(true);
+  const handleLogout = () => {
+    Cookies.remove("username");
+    Cookies.remove("isLoggedIn");
+    Cookies.remove("isOnboarded");
+    handleProfileClose();
+    navigate("/login");
+  };
 
-        try {
-            const response = await fetch(`${baseURL}/api/recipe`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ name: recipeName, steps: recipeSteps }),
-            });
+  const handleCompareClick = () => {
+    navigate("/compare");
+  };
 
-            if (!response.ok) {
-                setCreateStatus("error");
-                return;
-            }
+  const handleSearch = async (query) => {
+    if (!query.trim()) return;
 
-            setCreateStatus("success");
+    setIsLoading(true);
+    setHasSearched(true);
 
-            // Refresh the food names cache with the new recipe
-            await foodNamesCache.forceRefresh();
+    try {
+      // Always fetch top 10, filter in frontend
+      const response = await fetch("http://localhost:5000/api/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, top_k: 10 }),
+      });
 
-            // Clear search results
-            setAllResults([]);
-            setSearchResults([]);
-            setHasSearched(false);
-        } catch (error) {
-            console.error("Create recipe error:", error);
-            setCreateStatus("error");
-        } finally {
-            setIsCreating(false);
-        }
-    };
+      const data = await response.json();
+      const results = data.results || [];
+      setAllResults(results); // Store all results
+      setSearchResults(results.slice(0, kValue)); // Display filtered results
+    } catch (error) {
+      console.error("Search error:", error);
+      setAllResults([]);
+      setSearchResults([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    const handleSnackbarClose = () => {
-        setIsSnackbarOpen(false);
-    };
+  const handleModalOpen = () => {
+    setIsModalOpen(true);
+  };
 
-    const handleGenerateRecipe = async () => {
-        if (!recipeName.trim()) {
-            setIsSnackbarOpen(true);
-            setSnackbarMessage("Please enter a recipe name first.");
-            return;
-        }
+  const handleModalClose = () => {
+    if (isCreating) return; // Don't allow closing while creating
+    setIsModalOpen(false);
+    setRecipeName("");
+    setRecipeSteps("");
+    setCreateStatus(null);
+  };
 
-        setIsGenerating(true);
-        try {
-            const response = await fetch(`${baseURL}/api/recipe/generate`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ name: recipeName }),
-            });
+  const handleSubmit = async () => {
+    const nameToSubmit = recipeName;
+    const stepsToSubmit = recipeSteps;
 
-            if (!response.ok) {
-                throw new Error("Failed to generate recipe");
-            }
+    setRecipeName("");
+    setRecipeSteps("");
+    handleModalClose();
+    setIsLoading(true);
 
-            const data = await response.json();
-            setRecipeSteps(data.steps || "");
-            setIsSnackbarOpen(true);
-            setSnackbarMessage("Recipe steps generated!");
-        } catch (error) {
-            console.error("Generate recipe error:", error);
-            setIsSnackbarOpen(true);
-            setSnackbarMessage("Failed to generate recipe.");
-        } finally {
-            setIsGenerating(false);
-        }
-    };
+    try {
+      const response = await fetch("http://localhost:5000/api/recipe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: recipeName, steps: recipeSteps }),
+      });
 
-    return (
-        <div className="landing-page">
-            <div className="hero-section">
-                <div className="logo-container">
-                    <h1 className="logo-text">Food2Vec</h1>
-                </div>
-                <p className="tagline">Discover recipes using AI-powered search</p>
+      if (!response.ok) {
+        setCreateStatus('error');
+        return;
+      }
 
-                <SearchBar onSearch={handleSearch} />
+      setCreateStatus('success');
+      
+      // Refresh the food names cache with the new recipe
+      await foodNamesCache.forceRefresh();
+      
+      // Clear search results
+      setAllResults([]);
+      setSearchResults([]);
+      setHasSearched(false);
+    } catch (error) {
+      console.error("Create recipe error:", error);
+      setCreateStatus('error');
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
-                <br />
-                <SliderComponent kValue={kValue} setKValue={setKValue} />
+  const handleSnackbarClose = () => {
+    setIsSnackbarOpen(false);
+  };
 
-                <br />
-                <Stack alignItems="center" gap={2}>
-                    <Button onClick={handleModalOpen}>+ Add recipe</Button>
-                </Stack>
+  const handleGenerateRecipe = async () => {
+    if (!recipeName.trim()) {
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Please enter a recipe name first.");
+      return;
+    }
 
-                <Modal open={isModalOpen} onClose={handleModalClose}>
-                    <Box sx={style}>
-                        <Box sx={modalHeaderStyle}>
-                            <Typography id="modal-title" variant="h6" component="h2">
-                                Add recipe
-                            </Typography>
-                            <IconButton onClick={handleModalClose} sx={closeButtonStyle} size="small">
-                                <CloseIcon />
-                            </IconButton>
-                        </Box>
+    setIsGenerating(true);
+    try {
+      const response = await fetch("http://localhost:5000/api/recipe/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: recipeName }),
+      });
 
-                        <Box sx={modalContentStyle}>
-                            <TextField
-                                label="Recipe Name"
-                                variant="outlined"
-                                value={recipeName}
-                                onChange={(e) => setRecipeName(e.target.value)}
-                                placeholder="Enter recipe name..."
-                                sx={textInputStyle}
-                                autoFocus
-                            />
+      if (!response.ok) {
+        throw new Error("Failed to generate recipe");
+      }
 
-                            <Button
-                                onClick={handleGenerateRecipe}
-                                variant="outlined"
-                                color="secondary"
-                                disabled={isGenerating || !recipeName.trim()}
-                                sx={{ mb: 2, textTransform: "none" }}
-                                startIcon={isGenerating ? <CircularProgress size={16} /> : null}
-                            >
-                                {isGenerating ? "Generating..." : "✨ AI Generate Steps"}
-                            </Button>
+      const data = await response.json();
+      setRecipeSteps(data.steps || "");
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Recipe steps generated!");
+    } catch (error) {
+      console.error("Generate recipe error:", error);
+      setIsSnackbarOpen(true);
+      setSnackbarMessage("Failed to generate recipe.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
-                            <TextField
-                                label="Recipe steps"
-                                variant="outlined"
-                                value={recipeSteps}
-                                onChange={(e) => setRecipeSteps(e.target.value)}
-                                placeholder="Enter recipe steps or use AI generate..."
-                                multiline
-                                rows={6}
-                                sx={textInputStyle}
-                                disabled={isCreating || createStatus === "success"}
-                            />
+  return (
+    <div className="landing-page">
+      {/* Top Navigation Bar */}
+      <Box
+        sx={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          px: 2,
+          py: 1,
+          backgroundColor: "rgba(255, 255, 255, 0.95)",
+          backdropFilter: "blur(8px)",
+          borderBottom: "1px solid #eee",
+          zIndex: 1000,
+        }}
+      >
+        {/* Profile Button - Left */}
+        <IconButton
+          onClick={handleProfileClick}
+          size="small"
+          sx={{ border: "1px solid #e0e0e0" }}
+        >
+          <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
+            <PersonIcon fontSize="small" />
+          </Avatar>
+        </IconButton>
 
-                            {createStatus === "success" && (
-                                <Alert severity="success" sx={{ mb: 2 }}>
-                                    Recipe created successfully! The embedding has been generated.
-                                </Alert>
-                            )}
+        <Menu
+          anchorEl={anchorEl}
+          open={profileMenuOpen}
+          onClose={handleProfileClose}
+          PaperProps={{
+            sx: { minWidth: 240, mt: 1 },
+          }}
+        >
+          <Box sx={{ px: 2, py: 1 }}>
+            <Typography variant="subtitle2">{username}</Typography>
+            <Typography variant="caption" color="text.secondary">Your palate code</Typography>
+            <Box
+              sx={{
+                mt: 1,
+                p: 1,
+                backgroundColor: "#f5f5f5",
+                borderRadius: 1,
+                fontFamily: "monospace",
+                fontSize: "0.75rem",
+                wordBreak: "break-all",
+                maxWidth: 200,
+              }}
+            >
+              {palateCode ? palateCode.substring(0, 30) + "..." : "Loading..."}
+            </Box>
+          </Box>
+          <MenuItem onClick={handleCopyPalateCode} disabled={!palateCode}>
+            <ContentCopyIcon fontSize="small" sx={{ mr: 1 }} />
+            {codeCopied ? "Copied!" : "Copy Palate Code"}
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={handleLogout}>
+            <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
+            Log Out
+          </MenuItem>
+        </Menu>
 
-                            {createStatus === "error" && (
-                                <Alert severity="error" sx={{ mb: 2 }}>
-                                    Failed to create recipe. Please check your inputs and try again.
-                                </Alert>
-                            )}
+        {/* Compare Button - Right */}
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<CompareIcon />}
+          onClick={handleCompareClick}
+          sx={{ textTransform: "none" }}
+        >
+          Compare
+        </Button>
+      </Box>
 
-                            {isCreating && (
-                                <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
-                                    <CircularProgress size={20} />
-                                    <Typography variant="body2" color="text.secondary">
-                                        Creating recipe and generating embedding...
-                                    </Typography>
-                                </Box>
-                            )}
-                        </Box>
-
-                        <Box sx={modalFooterStyle}>
-                            <Button onClick={handleModalClose} variant="outlined" disabled={isCreating}>
-                                {createStatus === "success" ? "Close" : "Cancel"}
-                            </Button>
-                            {createStatus !== "success" && (
-                                <Button
-                                    onClick={handleSubmit}
-                                    variant="contained"
-                                    disabled={isCreating || isGenerating || !recipeName.trim() || !recipeSteps.trim()}
-                                    startIcon={isCreating ? <CircularProgress size={16} color="inherit" /> : null}
-                                >
-                                    {isCreating ? "Creating..." : "Create"}
-                                </Button>
-                            )}
-                        </Box>
-                    </Box>
-                </Modal>
-            </div>
-
-            {hasSearched && <SearchResults results={searchResults} isLoading={isLoading} />}
-
-            <Snackbar
-                open={isSnackbarOpen}
-                autoHideDuration={2000}
-                onClose={handleSnackbarClose}
-                message={snackbarMessage}
-            />
-
-            <footer className="footer">
-                <p></p>
-            </footer>
+      <div className="hero-section" style={{ paddingTop: "60px" }}>
+        <div className="logo-container">
+          <h1 className="logo-text">Food2Vec</h1>
         </div>
     );
 };
