@@ -388,6 +388,96 @@ const LandingPage = () => {
         <div className="logo-container">
           <h1 className="logo-text">Food2Vec</h1>
         </div>
+      </div>
+
+      <SearchBar onSearch={handleSearch} />
+
+      {isLoading && (
+        <Box sx={{ display: "flex", justifyContent: "center", my: 4 }}>
+          <CircularProgress />
+        </Box>
+      )}
+
+      {hasSearched && !isLoading && (
+        <SearchResults results={searchResults} />
+      )}
+
+      <SliderComponent kValue={kValue} setKValue={setKValue} />
+
+      <Button
+        variant="contained"
+        onClick={handleModalOpen}
+        sx={{ mt: 4, mb: 4 }}
+      >
+        Create Custom Recipe
+      </Button>
+
+      <Modal open={isModalOpen} onClose={handleModalClose}>
+        <Box sx={style}>
+          <Box sx={modalHeaderStyle}>
+            <Typography variant="h6">Create Custom Recipe</Typography>
+            <IconButton
+              onClick={handleModalClose}
+              sx={closeButtonStyle}
+              disabled={isCreating}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          <Box sx={modalContentStyle}>
+            <TextField
+              label="Recipe Name"
+              value={recipeName}
+              onChange={(e) => setRecipeName(e.target.value)}
+              sx={textInputStyle}
+              disabled={isCreating}
+            />
+            <TextField
+              label="Recipe Steps"
+              value={recipeSteps}
+              onChange={(e) => setRecipeSteps(e.target.value)}
+              multiline
+              rows={6}
+              sx={textInputStyle}
+              disabled={isCreating}
+            />
+            {createStatus === 'success' && (
+              <Alert severity="success">Recipe created successfully!</Alert>
+            )}
+            {createStatus === 'error' && (
+              <Alert severity="error">Failed to create recipe.</Alert>
+            )}
+          </Box>
+          <Box sx={modalFooterStyle}>
+            <Button
+              onClick={handleGenerateRecipe}
+              disabled={isGenerating || isCreating}
+              startIcon={isGenerating ? <CircularProgress size={20} /> : null}
+            >
+              {isGenerating ? "Generating..." : "Generate with AI"}
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              variant="contained"
+              disabled={isCreating}
+            >
+              {isCreating ? "Creating..." : "Create Recipe"}
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      <Snackbar
+        open={isSnackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+      >
+        <Alert onClose={handleSnackbarClose} severity="info">
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+    </div>
     );
 };
 
