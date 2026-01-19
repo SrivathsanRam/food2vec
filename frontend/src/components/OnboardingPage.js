@@ -86,7 +86,7 @@ export default function OnboardingPage() {
         setIsSubmitting(true);
 
         try {
-            const response = await fetch(`${baseURL}/api/palate/create`, {
+            const response = await fetch(`/api/palate/create`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -133,7 +133,7 @@ export default function OnboardingPage() {
         setIsSubmitting(true);
 
         try {
-            const response = await fetch(`${baseURL}/api/palate/import`, {
+            const response = await fetch(`/api/palate/import`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

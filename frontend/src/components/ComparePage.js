@@ -18,8 +18,6 @@ import { ArrowBack, Compare, Search, ContentCopy, Check } from "@mui/icons-mater
 import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
 
-const baseURL = process.env.REACT_APP_API_BASE_URL;
-
 export default function ComparePage() {
     const navigate = useNavigate();
     const [myPalateCode, setMyPalateCode] = useState("");
@@ -41,7 +39,7 @@ export default function ComparePage() {
         }
         const fetchMyPalate = async () => {
             try {
-                const response = await fetch(`${baseURL}/api/palate/check?username=${encodeURIComponent(username)}`);
+                const response = await fetch(`/api/palate/check?username=${encodeURIComponent(username)}`);
                 const data = await response.json();
                 if (data.palate_code) {
                     setMyPalateCode(data.palate_code);
@@ -71,7 +69,7 @@ export default function ComparePage() {
         setComparisonResult(null);
 
         try {
-            const response = await fetch(`${baseURL}/api/palate/compare`, {
+            const response = await fetch(`/api/palate/compare`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -104,7 +102,7 @@ export default function ComparePage() {
         setIntersectionRecipes([]);
 
         try {
-            const response = await fetch(`${baseURL}/api/palate/intersection`, {
+            const response = await fetch(`/api/palate/intersection`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

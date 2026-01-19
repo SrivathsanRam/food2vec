@@ -51,7 +51,7 @@ const SearchBar = ({ onSearch }) => {
             // Fallback to API if cache not ready
             const fetchSuggestions = async () => {
                 try {
-                    const response = await fetch(`${baseURL}/api/autocomplete?q=${encodeURIComponent(query)}`);
+                    const response = await fetch(`/api/autocomplete?q=${encodeURIComponent(query)}`);
                     const data = await response.json();
                     setSuggestions(data.suggestions || []);
                 } catch (error) {

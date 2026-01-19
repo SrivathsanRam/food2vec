@@ -65,7 +65,7 @@ export default function LoginPage() {
 
     const checkOnboardingStatus = async (username) => {
         try {
-            const response = await fetch(`${baseURL}/api/palate/check?username=${encodeURIComponent(username)}`);
+            const response = await fetch(`/api/palate/check?username=${encodeURIComponent(username)}`);
             const data = await response.json();
             return data.is_onboarded;
         } catch (error) {
@@ -80,7 +80,7 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${baseURL}/auth/login`, {
+            const response = await fetch(`/auth/login`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

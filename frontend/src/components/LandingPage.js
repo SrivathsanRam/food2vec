@@ -142,7 +142,7 @@ const LandingPage = () => {
     useEffect(() => {
         const fetchPalate = async () => {
             try {
-                const response = await fetch(`${baseURL}/api/palate/check?username=${encodeURIComponent(username)}`);
+                const response = await fetch(`/api/palate/check?username=${encodeURIComponent(username)}`);
                 const data = await response.json();
                 if (data.palate_code) {
                     setPalateCode(data.palate_code);
@@ -190,7 +190,7 @@ const LandingPage = () => {
 
         try {
             // Always fetch top 10, filter in frontend
-            const response = await fetch(`${baseURL}/api/search`, {
+            const response = await fetch(`/api/search`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -230,7 +230,7 @@ const LandingPage = () => {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${baseURL}/api/recipe`, {
+            const response = await fetch(`/api/recipe`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -273,7 +273,7 @@ const LandingPage = () => {
 
         setIsGenerating(true);
         try {
-            const response = await fetch(`${baseURL}/api/recipe/generate`, {
+            const response = await fetch(`/api/recipe/generate`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

@@ -18,8 +18,6 @@ import { Visibility, VisibilityOff, Lock, Person, Restaurant } from "@mui/icons-
 import { useNavigate } from "react-router-dom";
 import Cookies from "js-cookie";
 
-const baseURL = process.env.REACT_APP_API_BASE_URL;
-
 export default function SignUpPage() {
     const navigate = useNavigate();
     const [isSnackbarOpen, setIsSnackbarOpen] = useState(false);
@@ -77,7 +75,7 @@ export default function SignUpPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${baseURL}/auth/signup`, {
+            const response = await fetch(`/auth/signup`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -92,10 +90,10 @@ export default function SignUpPage() {
                 // Store user info in cookies
                 Cookies.set("username", formData.name, { expires: 1 });
                 Cookies.set("isLoggedIn", "true", { expires: 1 });
-                
+
                 setSnackbarMessage("Account created!");
                 setIsSnackbarOpen(true);
-                
+
                 // New users always go to onboarding
                 setTimeout(() => {
                     navigate("/onboarding");
